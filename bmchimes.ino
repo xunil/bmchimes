@@ -35,8 +35,49 @@ ESP8266WebServer server(80);
 
 void handleRoot() {
   digitalWrite(led, 1);
-  server.send(200, "text/plain", "hello from esp8266!");
+  RtcTemperature dieTemp = Rtc.GetTemperature();
+  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
+
+  String dateTimeStr;
+  getDateTimeString(dateTimeStr);
+
+  String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
+  message += "<h1>Status</h1>";
+  message += "Current date and time ";
+  message += dateTimeStr;
+  message += "<br/>\n";
+  message += "Die temperature ";
+  message += dieTempF;
+  message += "&deg;F<br/>\n";
+  if (WiFi.status() == WL_CONNECTED) {
+    message += "Connected to WiFi network ";
+    message += WiFi.SSID();
+    message += "<br/>\n";
+  }
+  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
+  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
+  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
+  message += "</body>\n</html>\n";
+  server.send(200, "text/plain", message);
   digitalWrite(led, 0);
+}
+
+void handleSleep() {
+  String message = "<html>\n<head>\n\t<title>Sleep</title>\n</head>\n<body>\n";
+  message += "<h1>Not yet implemented</h1>";
+  message += "</body>\n</html>\n";
+  
+  server.send(200, "text/html", message);
+}
+
+void handleReset() {
+  String message = "<html>\n<head>\n\t<title>Reset</title>\n</head>\n<body>\n";
+  message += "<h1>Resetting!</h1>";
+  message += "</body>\n</html>\n";
+  
+  server.send(200, "text/html", message);
+  delay(2000);
+  ESP.restart();
 }
 
 void handleTemp() {
@@ -54,22 +95,27 @@ void handleTemp() {
   digitalWrite(led, 0);  
 }
 
-void handleTime() {
+void getDateTimeString(String& dateTimeBuf) {
   RtcDateTime now = Rtc.GetDateTime();
+  dateTimeBuf = now.Year();
+  dateTimeBuf += "/";
+  dateTimeBuf += now.Month();
+  dateTimeBuf += "/";
+  dateTimeBuf += now.Day();
+  dateTimeBuf += " ";
+  dateTimeBuf += now.Hour();
+  dateTimeBuf += ":";
+  dateTimeBuf += now.Minute();
+  dateTimeBuf += ":";
+  dateTimeBuf += now.Second();
+}
 
+void handleTime() {
+  String dateTimeStr;
+  getDateTimeString(dateTimeStr);
   String message = "<html>\n<head>\n\t<title>RTC Time</title>\n</head>\n<body>\n";
   message += "<h1>At the tone, the time will be ";
-  message += now.Year();
-  message += "/";
-  message += now.Month();
-  message += "/";
-  message += now.Day();
-  message += " ";
-  message += now.Hour();
-  message += ":";
-  message += now.Minute();
-  message += ":";
-  message += now.Second();
+  message += dateTimeStr;
   message += "\n";
   message += "</body>\n</html>\n";
 
@@ -77,6 +123,86 @@ void handleTime() {
 }
 
 void handleConfig() {
+  if (server.method() == HTTP_POST) {
+    // User selected save
+    for (uint8_t i = 0; i < server.args(); i++) {
+      // message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+      if (server.argName(i) == "WifiSSID") {
+        Serial.print("Setting wifi SSID ");
+        Serial.println(server.arg(i));
+        config.wifiSSID = server.arg(i);
+      } else if (server.argName(i) == "WifiPassword") {
+        Serial.print("Setting wifi password ");
+        Serial.println(server.arg(i));
+        config.wifiPassword = server.arg(i);
+      } else if (server.argName(i) == "WifiMode") {
+        // Either Station or AP
+        Serial.print("Setting wifi mode ");
+        Serial.println(server.arg(i));
+        server.arg(i).toUpperCase();
+        if (server.arg(i) == "AP") {
+          config.wifiMode = WIFI_AP;
+        } else if (server.arg(i) == "STATION") {
+          config.wifiMode = WIFI_STA;
+        } else {
+          Serial.print("Unknown wifi mode ");
+          Serial.print(server.arg(i));
+          Serial.println("; defaulting to STATION");
+          config.wifiMode = WIFI_STA;
+        }
+      } else if (server.argName(i) == "ConnectWifiAtReset") {
+        // true or false
+        Serial.print("Setting connect wifi at reset flag to ");
+        Serial.println(server.arg(i));
+        server.arg(i).toUpperCase();
+        if (server.arg(i) == "TRUE") {
+          config.connectWifiAtReset = true;
+        } else if (server.arg(i) == "FALSE") {
+          config.connectWifiAtReset = false;
+        } else {
+          Serial.print("Unknown boolean value ");
+          Serial.print(server.arg(i));
+          Serial.println("; defaulting to TRUE");
+          config.connectWifiAtReset = true;
+        }
+      } else if (server.argName(i) == "SyncNTPAtReset") {
+        // true or false
+        Serial.print("Setting sync NTP at reset flag to ");
+        Serial.println(server.arg(i));
+        server.arg(i).toUpperCase();
+        if (server.arg(i) == "TRUE") {
+          config.syncNTPAtReset = true;
+        } else if (server.arg(i) == "FALSE") {
+          config.syncNTPAtReset = false;
+        } else {
+          Serial.print("Unknown boolean value ");
+          Serial.print(server.arg(i));
+          Serial.println("; defaulting to TRUE");
+          config.syncNTPAtReset = true;
+        }
+      } else if (server.argName(i) == "WakeEveryN") {
+        // Use parseInt to determine wake schedule
+        Serial.print("Setting wake every N to ");
+        Serial.println(server.arg(i));
+        config.wakeEveryN = server.arg(i).toInt();
+      } else if (server.argName(i) == "ChimeEveryN") {
+        // Use parseInt to determine chime schedule
+        Serial.print("Setting chime every N to ");
+        Serial.println(server.arg(i));
+        config.chimeEveryN = server.arg(i).toInt();
+      } else {
+        Serial.print("Unknown configuration key ");
+        Serial.println(server.argName(i));
+      }
+    }
+
+    // Write updated configuration to SPIFFS
+    // But don't bother if this was just an empty POST
+    if (server.args() > 0) {
+      writeConfig();
+    }
+  }
+
   String message = "<html>\n<head>\n\t<title>Configure</title>\n</head>\n<body>\n";
   message += "<h1>Configuration</h1>";
   message += "<form action=\"/config\" method=\"post\">\n";
@@ -382,6 +508,9 @@ void basicSetup() {
 
 void startWebServer() {
   // Set up handlers for different pages
+  server.on("/", handleRoot);
+  server.on("/reset", handleReset);
+  server.on("/sleep", handleSleep);
   server.on("/time", handleTime);
   server.on("/temp", handleTemp);
   server.on("/config", handleConfig);
