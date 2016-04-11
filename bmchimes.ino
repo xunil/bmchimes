@@ -14,14 +14,16 @@
 #include <RtcDS3231.h>
 
 struct BMChimeConfig {
-  String wifiSSID;
-  String wifiPassword;
+  String deviceDescription;
+  String wiFiSSID;
+  String wiFiPassword;
   // From ESP8266WiFi.h
-  WiFiMode wifiMode;
-  bool connectWifiAtReset;
+  WiFiMode wiFiMode;
+  bool connectWiFiAtReset;
   bool syncNTPAtReset;
   uint8_t wakeEveryN;
   uint8_t chimeEveryN; 
+  uint8_t chimeOffset; 
 } config;
 
 char ssid[64];
@@ -31,68 +33,15 @@ const int led = 2;
 RtcDS3231 Rtc;
 ESP8266WebServer server(80);
 
-// Web server handler functions
-
-void handleRoot() {
-  digitalWrite(led, 1);
-  RtcTemperature dieTemp = Rtc.GetTemperature();
-  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
-
-  String dateTimeStr;
-  getDateTimeString(dateTimeStr);
-
-  String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
-  message += "<h1>Status</h1>";
-  message += "Current date and time ";
-  message += dateTimeStr;
-  message += "<br/>\n";
-  message += "Die temperature ";
-  message += dieTempF;
-  message += "&deg;F<br/>\n";
-  if (WiFi.status() == WL_CONNECTED) {
-    message += "Connected to WiFi network ";
-    message += WiFi.SSID();
-    message += "<br/>\n";
+// Utility functions
+void printStringAsHexDump(String str) {
+  char buf[64];
+  str.toCharArray(buf, 64);
+  for (int i = 0; i < str.length(); i++) {
+    Serial.print(buf[i], HEX);
+    Serial.print(" ");
   }
-  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
-  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
-  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
-  message += "</body>\n</html>\n";
-  server.send(200, "text/plain", message);
-  digitalWrite(led, 0);
-}
-
-void handleSleep() {
-  String message = "<html>\n<head>\n\t<title>Sleep</title>\n</head>\n<body>\n";
-  message += "<h1>Not yet implemented</h1>";
-  message += "</body>\n</html>\n";
-  
-  server.send(200, "text/html", message);
-}
-
-void handleReset() {
-  String message = "<html>\n<head>\n\t<title>Reset</title>\n</head>\n<body>\n";
-  message += "<h1>Resetting!</h1>";
-  message += "</body>\n</html>\n";
-  
-  server.send(200, "text/html", message);
-  delay(2000);
-  ESP.restart();
-}
-
-void handleTemp() {
-  RtcTemperature dieTemp = Rtc.GetTemperature();
-  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
-  
-  digitalWrite(led, 1);
-  String message = "<html>\n<head>\n\t<title>Temperature</title>\n</head>\n<body>\n";
-  message += "<h1>Die temperature ";
-  message += dieTempF;
-  message += "&deg;F</h1>\n";
-  message += "</body>\n</html>\n";
-  
-  server.send(200, "text/html", message);
-  digitalWrite(led, 0);  
+  Serial.println("");
 }
 
 void getDateTimeString(String& dateTimeBuf) {
@@ -110,6 +59,95 @@ void getDateTimeString(String& dateTimeBuf) {
   dateTimeBuf += now.Second();
 }
 
+uint16_t secondsTilNextN(uint8_t N) {
+  // 16 bit return value should be sufficient; we will chime or wake at least once an hour.
+  RtcDateTime now = Rtc.GetDateTime();
+  
+  uint16_t seconds = ((N - (now.Minute() % N)) - 1) * 60;
+  seconds += 60 - now.Second();
+
+  return seconds;
+}
+
+uint16_t secondsTilNextChime() {
+  return secondsTilNextN(config.chimeEveryN);
+}
+
+// XXX: Accurate?
+uint16_t secondsTilNextSleep() {
+  return secondsTilNextN(config.wakeEveryN);
+}
+
+// Web server handler functions
+
+void handleRoot() {
+  digitalWrite(led, 1);
+  RtcTemperature dieTemp = Rtc.GetTemperature();
+  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
+
+  String dateTimeStr;
+  getDateTimeString(dateTimeStr);
+
+  String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
+  message += "<h1>";
+  message += config.deviceDescription;
+  message += "</h1>\n";
+  message += "<h2>Status</h2>\n";
+  message += "Current date and time ";
+  message += dateTimeStr;
+  message += "<br/>\n";
+  message += "Die temperature ";
+  message += dieTempF;
+  message += "&deg;F<br/>\n";
+  if (WiFi.status() == WL_CONNECTED) {
+    message += "Connected to WiFi network ";
+    message += WiFi.SSID();
+    message += "<br/>\n";
+  }
+  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
+  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
+  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
+  message += "</body>\n</html>\n";
+  server.send(200, "text/html", message);
+  digitalWrite(led, 0);
+}
+
+void handleSleep() {
+  String message = "<html>\n<head>\n\t<title>Sleep</title>\n</head>\n<body>\n";
+  message += "<h1>Not yet implemented</h1>\n";
+  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
+  message += "</body>\n</html>\n";
+  
+  server.send(200, "text/html", message);
+}
+
+void handleReset() {
+  String message = "<html>\n<head>\n\t<title>Reset</title>\n</head>\n<body>\n";
+  message += "<h1>Resetting!</h1>";
+  message += "</body>\n</html>\n";
+  
+  server.sendHeader("Refresh", "20; url=/");
+  server.send(200, "text/html", message);
+  delay(2000);
+  ESP.restart();
+}
+
+void handleTemp() {
+  RtcTemperature dieTemp = Rtc.GetTemperature();
+  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
+  
+  digitalWrite(led, 1);
+  String message = "<html>\n<head>\n\t<title>Temperature</title>\n</head>\n<body>\n";
+  message += "<h1>Die temperature ";
+  message += dieTempF;
+  message += "&deg;F</h1>\n";
+  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
+  message += "</body>\n</html>\n";
+  
+  server.send(200, "text/html", message);
+  digitalWrite(led, 0);  
+}
+
 void handleTime() {
   String dateTimeStr;
   getDateTimeString(dateTimeStr);
@@ -117,53 +155,60 @@ void handleTime() {
   message += "<h1>At the tone, the time will be ";
   message += dateTimeStr;
   message += "\n";
+  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
 
   server.send(200, "text/html", message);
 }
 
 void handleConfig() {
+  String message = "<html>\n<head>\n\t<title>Configure</title>\n</head>\n<body>\n";
+  message += "<h1>Configuration</h1>";
+
   if (server.method() == HTTP_POST) {
     // User selected save
     for (uint8_t i = 0; i < server.args(); i++) {
-      // message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-      if (server.argName(i) == "WifiSSID") {
-        Serial.print("Setting wifi SSID ");
+      if (server.argName(i) == "DeviceDescription") {
+        Serial.print("Setting Device Description ");
         Serial.println(server.arg(i));
-        config.wifiSSID = server.arg(i);
-      } else if (server.argName(i) == "WifiPassword") {
-        Serial.print("Setting wifi password ");
+        config.deviceDescription = server.arg(i);
+      } else if (server.argName(i) == "WiFiSSID") {
+        Serial.print("Setting WiFi SSID ");
         Serial.println(server.arg(i));
-        config.wifiPassword = server.arg(i);
-      } else if (server.argName(i) == "WifiMode") {
+        config.wiFiSSID = server.arg(i);
+      } else if (server.argName(i) == "WiFiPassword") {
+        Serial.print("Setting WiFi password ");
+        Serial.println(server.arg(i));
+        config.wiFiPassword = server.arg(i);
+      } else if (server.argName(i) == "WiFiMode") {
         // Either Station or AP
-        Serial.print("Setting wifi mode ");
+        Serial.print("Setting WiFi mode ");
         Serial.println(server.arg(i));
         server.arg(i).toUpperCase();
         if (server.arg(i) == "AP") {
-          config.wifiMode = WIFI_AP;
+          config.wiFiMode = WIFI_AP;
         } else if (server.arg(i) == "STATION") {
-          config.wifiMode = WIFI_STA;
+          config.wiFiMode = WIFI_STA;
         } else {
-          Serial.print("Unknown wifi mode ");
+          Serial.print("Unknown WiFi mode ");
           Serial.print(server.arg(i));
           Serial.println("; defaulting to STATION");
-          config.wifiMode = WIFI_STA;
+          config.wiFiMode = WIFI_STA;
         }
-      } else if (server.argName(i) == "ConnectWifiAtReset") {
+      } else if (server.argName(i) == "ConnectWiFiAtReset") {
         // true or false
-        Serial.print("Setting connect wifi at reset flag to ");
+        Serial.print("Setting connect WiFi at reset flag to ");
         Serial.println(server.arg(i));
         server.arg(i).toUpperCase();
         if (server.arg(i) == "TRUE") {
-          config.connectWifiAtReset = true;
+          config.connectWiFiAtReset = true;
         } else if (server.arg(i) == "FALSE") {
-          config.connectWifiAtReset = false;
+          config.connectWiFiAtReset = false;
         } else {
           Serial.print("Unknown boolean value ");
           Serial.print(server.arg(i));
           Serial.println("; defaulting to TRUE");
-          config.connectWifiAtReset = true;
+          config.connectWiFiAtReset = true;
         }
       } else if (server.argName(i) == "SyncNTPAtReset") {
         // true or false
@@ -181,15 +226,17 @@ void handleConfig() {
           config.syncNTPAtReset = true;
         }
       } else if (server.argName(i) == "WakeEveryN") {
-        // Use parseInt to determine wake schedule
         Serial.print("Setting wake every N to ");
         Serial.println(server.arg(i));
         config.wakeEveryN = server.arg(i).toInt();
       } else if (server.argName(i) == "ChimeEveryN") {
-        // Use parseInt to determine chime schedule
         Serial.print("Setting chime every N to ");
         Serial.println(server.arg(i));
         config.chimeEveryN = server.arg(i).toInt();
+      } else if (server.argName(i) == "ChimeOffset") {
+        Serial.print("Setting chime offet to ");
+        Serial.println(server.arg(i));
+        config.chimeOffset = server.arg(i).toInt();
       } else {
         Serial.print("Unknown configuration key ");
         Serial.println(server.argName(i));
@@ -200,48 +247,54 @@ void handleConfig() {
     // But don't bother if this was just an empty POST
     if (server.args() > 0) {
       writeConfig();
+      message += "<h4>Configuration updated.</h4>\n";
     }
   }
 
-  String message = "<html>\n<head>\n\t<title>Configure</title>\n</head>\n<body>\n";
-  message += "<h1>Configuration</h1>";
   message += "<form action=\"/config\" method=\"post\">\n";
-  message += "<label>WiFi SSID <input type=\"text\" name=\"wifiSSID\" value=\"";
-  message += config.wifiSSID;
+  message += "<label>Device description <input type=\"text\" name=\"DeviceDescription\" value=\"";
+  message += config.deviceDescription;
   message += "\"/></label><br/>\n";
-  message += "<label>WiFi Password <input type=\"text\" name=\"wifiPassword\" value=\"";
-  message += config.wifiPassword;
+  message += "<label>WiFi SSID <input type=\"text\" name=\"WiFiSSID\" value=\"";
+  message += config.wiFiSSID;
   message += "\"/></label><br/>\n";
-  message += "<label>Wifi Mode <select name=\"wifiMode\">\n";
+  message += "<label>WiFi Password <input type=\"text\" name=\"WiFiPassword\" value=\"";
+  message += config.wiFiPassword;
+  message += "\"/></label><br/>\n";
+  message += "<label>WiFi Mode <select name=\"WiFiMode\">\n";
   message += "<option value=\"AP\" ";
-  if (config.wifiMode == WIFI_AP) {
+  if (config.wiFiMode == WIFI_AP) {
     message += "selected";
   }
   message += ">Access Point</option>\n";
   message += "<option value=\"STATION\" ";
-  if (config.wifiMode == WIFI_STA) {
+  if (config.wiFiMode == WIFI_STA) {
     message += "selected";
   }
   message += ">Station</option>\n";
   message += "</select></label><br/>\n";
-  message += "<label>Connect to WiFi at reset <input type=\"checkbox\" name=\"connectWifiAtReset\" ";
-  if (config.connectWifiAtReset) {
+  message += "<label>Connect to WiFi at reset <input type=\"checkbox\" name=\"ConnectWiFiAtReset\" ";
+  if (config.connectWiFiAtReset) {
     message += "checked";
   }
   message += "/></label><br/>\n";
-  message += "<label>Sync with NTP at reset <input type=\"checkbox\" name=\"syncNTPAtReset\" ";
+  message += "<label>Sync with NTP at reset <input type=\"checkbox\" name=\"SyncNTPAtReset\" ";
   if (config.syncNTPAtReset) {
     message += "checked";
   }
   message += "/></label><br/>\n";
-  message += "<label>Wake every <input type=\"text\" name=\"wakeEveryN\" value=\"";
+  message += "<label>Wake every <input type=\"text\" name=\"WakeEveryN\" value=\"";
   message += config.wakeEveryN;
   message += "\"/> minutes</label><br/>\n";
-  message += "<label>Chime every <input type=\"text\" name=\"chimeEveryN\" value=\"";
+  message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryN\" value=\"";
   message += config.chimeEveryN;
   message += "\"/> minutes</label><br/>\n";
+  message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
+  message += config.chimeOffset;
+  message += "\"/> seconds</label><br/>\n";
   message += "<input type=\"submit\" value=\"Save\"/>\n";
   message += "</form>\n";
+  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
   
   server.send(200, "text/html", message);
@@ -265,8 +318,7 @@ void handleNotFound(){
 }
 
 // Setup functions
-
-void readConfig() {
+void setupSPIFFS() {
   Serial.println("Starting SPIFFS");
   if (SPIFFS.begin()) {
     Serial.println("SPIFFS initialized");
@@ -275,7 +327,9 @@ void readConfig() {
     return;
   }
   Serial.flush();
+}
 
+void dumpSPIFFSInfo() {
   FSInfo fs_info;
   SPIFFS.info(fs_info);
 
@@ -302,7 +356,9 @@ void readConfig() {
     Serial.println(dir.fileName());
   }
   Serial.flush();
+}
 
+void readConfig() {
   Serial.println("Opening config file");
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
@@ -313,53 +369,67 @@ void readConfig() {
   Serial.println("Beginning read of config file");
   Serial.flush();
   int loops = 0;
-  while (loops < 10 && f.available()) {
+  while (loops < 50 && f.available()) {
     yield();
     Serial.flush();
     String key = f.readStringUntil('=');
+    key.trim();
     Serial.print("Read key ");
-    Serial.println(key);
+    Serial.print(key);
+    Serial.print("; hex: ");
+    printStringAsHexDump(key);
+    Serial.println("");
+
     String value = f.readStringUntil('\n');
+    value.trim();
     Serial.print("Read value ");
-    Serial.println(value);
+    Serial.print(value);
+    Serial.print("; hex: ");
+    printStringAsHexDump(value);
+    Serial.println("");
+
     Serial.flush();
-    if (key == "WifiSSID") {
-      Serial.print("Setting wifi SSID ");
+    if (key == "DeviceDescription") {
+      Serial.print("Setting Device Description");
       Serial.println(value);
-      config.wifiSSID = value;
-    } else if (key == "WifiPassword") {
-      Serial.print("Setting wifi password ");
+      config.deviceDescription = value;
+    } else if (key == "WiFiSSID") {
+      Serial.print("Setting WiFi SSID ");
       Serial.println(value);
-      config.wifiPassword = value;
-    } else if (key == "WifiMode") {
+      config.wiFiSSID = value;
+    } else if (key == "WiFiPassword") {
+      Serial.print("Setting WiFi password ");
+      Serial.println(value);
+      config.wiFiPassword = value;
+    } else if (key == "WiFiMode") {
       // Either Station or AP
-      Serial.print("Setting wifi mode ");
+      Serial.print("Setting WiFi mode ");
       Serial.println(value);
       value.toUpperCase();
       if (value == "AP") {
-        config.wifiMode = WIFI_AP;
+        config.wiFiMode = WIFI_AP;
       } else if (value == "STATION") {
-        config.wifiMode = WIFI_STA;
+        config.wiFiMode = WIFI_STA;
       } else {
-        Serial.print("Unknown wifi mode ");
+        Serial.print("Unknown WiFi mode ");
         Serial.print(value);
         Serial.println("; defaulting to STATION");
-        config.wifiMode = WIFI_STA;
+        config.wiFiMode = WIFI_STA;
       }
-    } else if (key == "ConnectWifiAtReset") {
+    } else if (key == "ConnectWiFiAtReset") {
       // true or false
-      Serial.print("Setting connect wifi at reset flag to ");
+      Serial.print("Setting connect WiFi at reset flag to ");
       Serial.println(value);
       value.toUpperCase();
       if (value == "TRUE") {
-        config.connectWifiAtReset = true;
+        config.connectWiFiAtReset = true;
       } else if (value == "FALSE") {
-        config.connectWifiAtReset = false;
+        config.connectWiFiAtReset = false;
       } else {
         Serial.print("Unknown boolean value ");
         Serial.print(value);
         Serial.println("; defaulting to TRUE");
-        config.connectWifiAtReset = true;
+        config.connectWiFiAtReset = true;
       }
     } else if (key == "SyncNTPAtReset") {
       // true or false
@@ -377,15 +447,17 @@ void readConfig() {
         config.syncNTPAtReset = true;
       }
     } else if (key == "WakeEveryN") {
-      // Use parseInt to determine wake schedule
       Serial.print("Setting wake every N to ");
       Serial.println(value);
       config.wakeEveryN = value.toInt();
     } else if (key == "ChimeEveryN") {
-      // Use parseInt to determine chime schedule
       Serial.print("Setting chime every N to ");
       Serial.println(value);
       config.chimeEveryN = value.toInt();
+    } else if (key == "ChimeOffset") {
+      Serial.print("Setting chime offset to ");
+      Serial.println(value);
+      config.chimeOffset = value.toInt();
     } else {
       Serial.print("Unknown configuration key ");
       Serial.println(key);
@@ -398,26 +470,51 @@ void readConfig() {
 }
 
 void writeConfig() {
-  SPIFFS.begin();
+  Serial.println("writeConfig: Opening /bmchimes.cfg for writing");
   File f = SPIFFS.open("/bmchimes.cfg", "w");
   if (!f) {
       Serial.println("writeConfig: file open failed");
       return;
   }
-  f.print("WifiSSID=");
-  f.println(config.wifiSSID);
-  f.print("WifiPassword=");
-  f.println(config.wifiPassword);
-  f.print("WifiMode=");
-  if (config.wifiMode == WIFI_AP) {
+  Serial.println("File successfully opened");
+
+  config.deviceDescription.trim();
+  Serial.print("Writing device description: ");
+  Serial.print(config.deviceDescription);
+  Serial.print("; hex: ");
+  printStringAsHexDump(config.deviceDescription);
+  Serial.println("");
+  f.print("DeviceDescription=");
+  f.println(config.deviceDescription);
+
+  config.wiFiSSID.trim();
+  Serial.print("Writing WiFiSSID: ");
+  Serial.print(config.wiFiSSID);
+  Serial.print("; hex: ");
+  printStringAsHexDump(config.wiFiSSID);
+  Serial.println("");
+  f.print("WiFiSSID=");
+  f.println(config.wiFiSSID);
+
+  config.wiFiPassword.trim();
+  Serial.print("Writing WiFiPassword: ");
+  Serial.print(config.wiFiPassword);
+  Serial.print("; hex: ");
+  printStringAsHexDump(config.wiFiPassword);
+  Serial.println("");
+  f.print("WiFiPassword=");
+  f.println(config.wiFiPassword);
+
+  f.print("WiFiMode=");
+  if (config.wiFiMode == WIFI_AP) {
     f.println("AP");
-  } else if (config.wifiMode == WIFI_STA) {
+  } else if (config.wiFiMode == WIFI_STA) {
     f.println("STATION");
   } else {
     f.println("UNKNOWN");
   }
-  f.print("ConnectWifiAtReset=");
-  if (config.connectWifiAtReset == true) {
+  f.print("ConnectWiFiAtReset=");
+  if (config.connectWiFiAtReset == true) {
     f.println("TRUE");
   } else {
     f.println("FALSE");
@@ -432,6 +529,8 @@ void writeConfig() {
   f.println(config.wakeEveryN);
   f.print("ChimeEveryN=");
   f.println(config.chimeEveryN);
+  f.print("ChimeOffset=");
+  f.println(config.chimeOffset);
   f.close();
 }
 
@@ -446,9 +545,9 @@ void syncNTPTime() {
   Serial.println("");
 }
 
-void connectToWifi() {
-  config.wifiSSID.toCharArray(ssid, 64);
-  config.wifiPassword.toCharArray(password, 64);
+void connectToWiFi() {
+  config.wiFiSSID.toCharArray(ssid, 64);
+  config.wiFiPassword.toCharArray(password, 64);
   WiFi.begin(ssid, password);
   Serial.println("");
 
@@ -459,7 +558,7 @@ void connectToWifi() {
   }
   Serial.println("");
   Serial.print("Connected to ");
-  Serial.println(config.wifiSSID);
+  Serial.println(config.wiFiSSID);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
@@ -530,9 +629,12 @@ void startWebServer() {
 
 void setup(void) {
   basicSetup();
+  setupSPIFFS();
+  // DEBUG: Remove dumpSPIFFSInfo call
+  dumpSPIFFSInfo();
   readConfig();
-  if (config.connectWifiAtReset) {
-    connectToWifi();
+  if (config.connectWiFiAtReset) {
+    connectToWiFi();
     if (config.syncNTPAtReset) {
       syncNTPTime();
     }
