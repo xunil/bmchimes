@@ -11,3 +11,4 @@ TODO:
   * Chime GPIO output and input (input indicates stop switch tripped)
   * GPIO output should have timeout; if we haven't received a stop signal in N seconds (30? 60?), something is probably wrong
 * Test WiFi AP mode
+* Add ADC measurement and recording for battery voltage

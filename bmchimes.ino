@@ -78,6 +78,24 @@ uint16_t secondsTilNextSleep() {
   return secondsTilNextN(config.wakeEveryN);
 }
 
+void enterDeepSleep(uint16_t secondsToSleep) {
+  Serial.print("Entering deep sleep for ");
+  Serial.print(secondsToSleep);
+  Serial.println(" seconds...");
+  Serial.flush();
+  // deepSleep() expects microseconds
+  ESP.deepSleep(secondsToSleep * 1e6);
+}
+
+bool shouldSleep() {
+  uint16_t secondsTilSleep = secondsTilNextSleep();
+  uint16_t secondsTilChime = secondsTilNextChime();
+  if (secondsTilSleep < 2 && secondsTilSleep < secondsTilChime) {
+    return true;
+  }
+  return false;
+}
+
 // Web server handler functions
 
 void handleRoot() {
