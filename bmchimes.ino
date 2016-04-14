@@ -90,7 +90,14 @@ void enterDeepSleep(uint16_t secondsToSleep) {
 bool shouldSleep() {
   uint16_t secondsTilSleep = secondsTilNextSleep();
   uint16_t secondsTilChime = secondsTilNextChime();
-  if (secondsTilSleep < 2 && secondsTilSleep < secondsTilChime) {
+  if (secondsTilSleep <= 1 && secondsTilSleep < secondsTilChime) {
+    return true;
+  }
+  return false;
+}
+
+bool shouldChime() {
+  if (secondsTilNextChime() <= 1) {
     return true;
   }
   return false;
@@ -99,7 +106,6 @@ bool shouldSleep() {
 // Web server handler functions
 
 void handleRoot() {
-  digitalWrite(led, 1);
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = dieTemp.AsFloat()*(9/5)+32;
 
@@ -127,7 +133,6 @@ void handleRoot() {
   message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
   message += "</body>\n</html>\n";
   server.send(200, "text/html", message);
-  digitalWrite(led, 0);
 }
 
 void handleSleep() {
@@ -154,7 +159,6 @@ void handleTemp() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = dieTemp.AsFloat()*(9/5)+32;
   
-  digitalWrite(led, 1);
   String message = "<html>\n<head>\n\t<title>Temperature</title>\n</head>\n<body>\n";
   message += "<h1>Die temperature ";
   message += dieTempF;
@@ -163,7 +167,6 @@ void handleTemp() {
   message += "</body>\n</html>\n";
   
   server.send(200, "text/html", message);
-  digitalWrite(led, 0);  
 }
 
 void handleTime() {
@@ -319,7 +322,6 @@ void handleConfig() {
 }
 
 void handleNotFound(){
-  digitalWrite(led, 1);
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
@@ -332,7 +334,6 @@ void handleNotFound(){
     message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
   server.send(404, "text/plain", message);
-  digitalWrite(led, 0);
 }
 
 // Setup functions
@@ -665,4 +666,10 @@ void setup(void) {
 
 void loop(void) {
   server.handleClient();
+  if (shouldSleep()) {
+    Serial.println("Should go to sleep now...");
+  }
+  if (shouldChime()) {
+    Serial.println("Should chime now...");
+  }
 }
