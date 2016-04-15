@@ -22,6 +22,7 @@ struct BMChimeConfig {
   bool connectWiFiAtReset;
   bool syncNTPAtReset;
   uint8_t wakeEveryN;
+  uint8_t stayAwakeMins;
   uint8_t chimeEveryN; 
   uint8_t chimeOffset; 
 } config;
@@ -250,6 +251,10 @@ void handleConfig() {
         Serial.print("Setting wake every N to ");
         Serial.println(server.arg(i));
         config.wakeEveryN = server.arg(i).toInt();
+      } else if (server.argName(i) == "StayAwakeMins") {
+        Serial.print("Setting stay awake time to ");
+        Serial.println(server.arg(i));
+        config.stayAwakeMins = server.arg(i).toInt();
       } else if (server.argName(i) == "ChimeEveryN") {
         Serial.print("Setting chime every N to ");
         Serial.println(server.arg(i));
@@ -306,6 +311,9 @@ void handleConfig() {
   message += "/></label><br/>\n";
   message += "<label>Wake every <input type=\"text\" name=\"WakeEveryN\" value=\"";
   message += config.wakeEveryN;
+  message += "\"/> minutes</label><br/>\n";
+  message += "<label>Stay awake for <input type=\"text\" name=\"WakeEveryN\" value=\"";
+  message += config.stayAwakeMins;
   message += "\"/> minutes</label><br/>\n";
   message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryN\" value=\"";
   message += config.chimeEveryN;
@@ -469,6 +477,10 @@ void readConfig() {
       Serial.print("Setting wake every N to ");
       Serial.println(value);
       config.wakeEveryN = value.toInt();
+    } else if (key == "StayAwakeMins") {
+      Serial.print("Setting stay awake time to ");
+      Serial.println(value);
+      config.stayAwakeMins = value.toInt();
     } else if (key == "ChimeEveryN") {
       Serial.print("Setting chime every N to ");
       Serial.println(value);
@@ -546,6 +558,8 @@ void writeConfig() {
   }
   f.print("WakeEveryN=");
   f.println(config.wakeEveryN);
+  f.print("StayAwakeMins=");
+  f.println(config.stayAwakeMins);
   f.print("ChimeEveryN=");
   f.println(config.chimeEveryN);
   f.print("ChimeOffset=");
