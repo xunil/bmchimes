@@ -45,19 +45,39 @@ void printStringAsHexDump(String str) {
   Serial.println("");
 }
 
-void getDateTimeString(String& dateTimeBuf) {
-  RtcDateTime now = Rtc.GetDateTime();
-  dateTimeBuf = now.Year();
+void dateTimeStringFromRtcDateTime(RtcDateTime rtcDateTime, String& dateTimeBuf) {
+  dateTimeBuf = rtcDateTime.Year();
   dateTimeBuf += "/";
-  dateTimeBuf += now.Month();
+  dateTimeBuf += rtcDateTime.Month();
   dateTimeBuf += "/";
-  dateTimeBuf += now.Day();
+  dateTimeBuf += rtcDateTime.Day();
   dateTimeBuf += " ";
-  dateTimeBuf += now.Hour();
+  dateTimeBuf += rtcDateTime.Hour();
   dateTimeBuf += ":";
-  dateTimeBuf += now.Minute();
+  dateTimeBuf += rtcDateTime.Minute();
   dateTimeBuf += ":";
-  dateTimeBuf += now.Second();
+  dateTimeBuf += rtcDateTime.Second();
+}
+
+void getRtcDateTimeString(String& dateTimeBuf) {
+  RtcDateTime now = Rtc.GetDateTime();
+  dateTimeStringFromRtcDateTime(now, dateTimeBuf);
+}
+
+void getSystemDateTimeString(String& dateTimeBuf) {
+  struct tm *tmp;
+  time_t systemTime = time(nullptr);
+  tmp = localtime(&systemTime);
+
+  RtcDateTime systemRtcDateTime = RtcDateTime(
+    tmp->tm_year + 1900,
+    tmp->tm_mon + 1,
+    tmp->tm_mday,
+    tmp->tm_hour,
+    tmp->tm_min,
+    tmp->tm_sec
+  );
+  dateTimeStringFromRtcDateTime(systemRtcDateTime, dateTimeBuf);
 }
 
 uint16_t secondsTilNextN(uint8_t N) {
@@ -110,16 +130,21 @@ void handleRoot() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = dieTemp.AsFloat()*(9/5)+32;
 
-  String dateTimeStr;
-  getDateTimeString(dateTimeStr);
+  String rtcDateTimeStr;
+  String systemDateTimeStr;
+  getRtcDateTimeString(rtcDateTimeStr);
+  getSystemDateTimeString(systemDateTimeStr);
 
   String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
   message += "<h1>";
   message += config.deviceDescription;
   message += "</h1>\n";
   message += "<h2>Status</h2>\n";
-  message += "Current date and time ";
-  message += dateTimeStr;
+  message += "RTC date and time ";
+  message += rtcDateTimeStr;
+  message += "<br/>\n";
+  message += "System date and time ";
+  message += systemDateTimeStr;
   message += "<br/>\n";
   message += "Die temperature ";
   message += dieTempF;
@@ -130,6 +155,7 @@ void handleRoot() {
     message += "<br/>\n";
   }
   message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
+  message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
   message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
   message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
   message += "</body>\n</html>\n";
@@ -171,12 +197,38 @@ void handleTemp() {
 }
 
 void handleTime() {
-  String dateTimeStr;
-  getDateTimeString(dateTimeStr);
-  String message = "<html>\n<head>\n\t<title>RTC Time</title>\n</head>\n<body>\n";
-  message += "<h1>At the tone, the time will be ";
-  message += dateTimeStr;
-  message += "\n";
+  String message = "<html>\n<head>\n\t<title>Manage Time Settings</title>\n</head>\n<body>\n";
+  if (server.method() == HTTP_POST) {
+    for (uint8_t i = 0; i < server.args(); i++) {
+      if (server.argName(i) == "syncNTP") {
+        syncNTPTime();
+        message += "<h2>Synchronized system time with NTP</h2>\n";
+      } else if (server.argName(i) == "writeRTC") {
+        writeSystemTimeToRtc();
+        message += "<h2>Wrote system time to RTC</h2>\n";
+      }
+    }
+  }
+
+  String rtcDateTimeStr;
+  String systemDateTimeStr;
+  getRtcDateTimeString(rtcDateTimeStr);
+  getSystemDateTimeString(systemDateTimeStr);
+
+  message += "RTC date and time ";
+  message += rtcDateTimeStr;
+  message += "<br/>\n";
+  message += "System date and time ";
+  message += systemDateTimeStr;
+  message += "<br/>\n";
+  message += "<form action=\"/time\" method=\"post\">\n";
+  message += "<input type=\"submit\" value=\"Sync System Time with NTP\"/>\n";
+  message += "<input type=\"hidden\" name=\"syncNTP\" value=\"true\"/>\n";
+  message += "</form>\n";
+  message += "<form action=\"/time\" method=\"post\">\n";
+  message += "<input type=\"submit\" value=\"Set RTC from System Time\"/>\n";
+  message += "<input type=\"hidden\" name=\"writeRTC\" value=\"true\"/>\n";
+  message += "</form>\n";
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
 
@@ -570,12 +622,19 @@ void writeConfig() {
 void syncNTPTime() {
   Serial.println("Fetching time from NTP servers");
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  // TODO: Add a timeout so this doesn't loop forever
-  while (!time(nullptr)) {
+  // Wait up to a minute for NTP sync
+  uint8_t attempts = 0;
+  while (attempts <= 120 && !time(nullptr)) {
     Serial.print(".");
-    delay(1000);
+    delay(500);
+    attempts++;
   }
   Serial.println("");
+  if (!time(nullptr)) {
+    Serial.println("Failed to sync time with NTP servers!");
+  } else {
+    Serial.println("Successfully synced time with NTP servers.");
+  }
 }
 
 void connectToWiFi() {
@@ -584,43 +643,52 @@ void connectToWiFi() {
   WiFi.begin(ssid, password);
   Serial.println("");
 
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
+  // Wait up to 1 minute for connection
+  uint8_t attempts = 0; 
+  while (attempts <= 120 && WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    attempts++;
   }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(config.wiFiSSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
 
-  if (MDNS.begin("esp8266")) {
-    Serial.println("MDNS responder started");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(config.wiFiSSID);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
+    if (MDNS.begin("esp8266")) {
+      Serial.println("MDNS responder started");
+    }
+  } else {
+    Serial.println("");
+    Serial.print("Unable to connect to ");
+    Serial.print(config.wiFiSSID);
+    Serial.println(" network.  Giving up.");
   }
+}
+
+void writeSystemTimeToRtc() {
+  Serial.println("Setting RTC time from system time");
+  struct tm *tmp;
+  time_t now = time(nullptr);
+  tmp = localtime(&now);
+
+  RtcDateTime systemDateTime = RtcDateTime(
+    tmp->tm_year + 1900,
+    tmp->tm_mon + 1,
+    tmp->tm_mday,
+    tmp->tm_hour,
+    tmp->tm_min,
+    tmp->tm_sec
+  );
+
+  Rtc.SetDateTime(systemDateTime);
 }
 
 void rtcSetup() {
   Rtc.Begin();
-  if (!Rtc.IsDateTimeValid()) {
-    Serial.println("RTC date/time invalid, will set from local clock.");
-
-    struct tm *tmp;
-    time_t now = time(nullptr);
-    tmp = localtime(&now);
-
-    RtcDateTime ntpDateTime = RtcDateTime(
-      tmp->tm_year + 1900,
-      tmp->tm_mon + 1,
-      tmp->tm_mday,
-      tmp->tm_hour,
-      tmp->tm_min,
-      tmp->tm_sec
-    );
-
-    Rtc.SetDateTime(ntpDateTime);
-  }
-
   if (!Rtc.GetIsRunning()) {
     Serial.println("RTC was not actively running, starting now");
     Rtc.SetIsRunning(true);
