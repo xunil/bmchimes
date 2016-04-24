@@ -22,5 +22,3 @@ TODO:
   * Add option to go straight to AP mode
 * Add ADC measurement and recording for battery voltage
 * Buy LIR2032 batteries for RTCs
-* Set system clock from RTC by default
-  * Also add button to set system clock from RTC

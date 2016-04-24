@@ -13,6 +13,8 @@
 #endif
 #include <RtcDS3231.h>
 
+#define RTC_ALARM_PIN 15
+
 struct BMChimeConfig {
   String deviceDescription;
   String wiFiSSID;
@@ -20,7 +22,6 @@ struct BMChimeConfig {
   // From ESP8266WiFi.h
   WiFiMode wiFiMode;
   bool connectWiFiAtReset;
-  bool syncNTPAtReset;
   uint8_t wakeEveryN;
   uint8_t stayAwakeMins;
   uint8_t chimeEveryN; 
@@ -34,7 +35,13 @@ const int led = 2;
 RtcDS3231 Rtc;
 ESP8266WebServer server(80);
 
+volatile bool interruptFlag = false;
+
 // Utility functions
+void alarmISR() {
+  interruptFlag = true;
+}
+
 void printStringAsHexDump(String str) {
   char buf[64];
   str.toCharArray(buf, 64);
@@ -64,7 +71,7 @@ void getRtcDateTimeString(String& dateTimeBuf) {
   dateTimeStringFromRtcDateTime(now, dateTimeBuf);
 }
 
-void getSystemDateTimeString(String& dateTimeBuf) {
+void getNtpDateTimeString(String& dateTimeBuf) {
   struct tm *tmp;
   time_t systemTime = time(nullptr);
   tmp = localtime(&systemTime);
@@ -124,6 +131,27 @@ bool shouldChime() {
   return false;
 }
 
+bool alarmFired() {
+  bool wasAlarmed = false;
+  if (interruptFlag) { // check our flag that gets sets in the interrupt
+    wasAlarmed = true;
+    interruptFlag = false; // reset the flag
+
+    // this gives us which alarms triggered and
+    // then allows for others to trigger again
+    DS3231AlarmFlag flag = Rtc.LatchAlarmsTriggeredFlags();
+
+    if (flag & DS3231AlarmFlag_Alarm1) {
+      Serial.println("alarm one triggered");
+    }
+    if (flag & DS3231AlarmFlag_Alarm2) {
+      Serial.println("alarm two triggered");
+    }
+  }
+  return wasAlarmed;
+}
+
+
 // Web server handler functions
 
 void handleRoot() {
@@ -131,9 +159,7 @@ void handleRoot() {
   float dieTempF = dieTemp.AsFloat()*(9/5)+32;
 
   String rtcDateTimeStr;
-  String systemDateTimeStr;
   getRtcDateTimeString(rtcDateTimeStr);
-  getSystemDateTimeString(systemDateTimeStr);
 
   String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
   message += "<h1>";
@@ -142,9 +168,6 @@ void handleRoot() {
   message += "<h2>Status</h2>\n";
   message += "RTC date and time ";
   message += rtcDateTimeStr;
-  message += "<br/>\n";
-  message += "System date and time ";
-  message += systemDateTimeStr;
   message += "<br/>\n";
   message += "Die temperature ";
   message += dieTempF;
@@ -198,36 +221,31 @@ void handleTemp() {
 
 void handleTime() {
   String message = "<html>\n<head>\n\t<title>Manage Time Settings</title>\n</head>\n<body>\n";
+  message += "<h1>Time</h1>\n";
   if (server.method() == HTTP_POST) {
     for (uint8_t i = 0; i < server.args(); i++) {
-      if (server.argName(i) == "syncNTP") {
+      if (server.argName(i) == "writeNTP") {
         syncNTPTime();
-        message += "<h2>Synchronized system time with NTP</h2>\n";
-      } else if (server.argName(i) == "writeRTC") {
-        writeSystemTimeToRtc();
-        message += "<h2>Wrote system time to RTC</h2>\n";
+        writeNtpTimeToRtc();
+        message += "<h2>Wrote NTP time to RTC</h2>\n";
       }
     }
   }
 
   String rtcDateTimeStr;
-  String systemDateTimeStr;
+  String ntpDateTimeStr;
   getRtcDateTimeString(rtcDateTimeStr);
-  getSystemDateTimeString(systemDateTimeStr);
+  getNtpDateTimeString(ntpDateTimeStr);
 
   message += "RTC date and time ";
   message += rtcDateTimeStr;
   message += "<br/>\n";
-  message += "System date and time ";
-  message += systemDateTimeStr;
+  message += "NTP date and time ";
+  message += ntpDateTimeStr;
   message += "<br/>\n";
   message += "<form action=\"/time\" method=\"post\">\n";
-  message += "<input type=\"submit\" value=\"Sync System Time with NTP\"/>\n";
-  message += "<input type=\"hidden\" name=\"syncNTP\" value=\"true\"/>\n";
-  message += "</form>\n";
-  message += "<form action=\"/time\" method=\"post\">\n";
-  message += "<input type=\"submit\" value=\"Set RTC from System Time\"/>\n";
-  message += "<input type=\"hidden\" name=\"writeRTC\" value=\"true\"/>\n";
+  message += "<input type=\"submit\" value=\"Sync with NTP and write to RTC\"/>\n";
+  message += "<input type=\"hidden\" name=\"writeNTP\" value=\"true\"/>\n";
   message += "</form>\n";
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
@@ -283,21 +301,6 @@ void handleConfig() {
           Serial.print(server.arg(i));
           Serial.println("; defaulting to TRUE");
           config.connectWiFiAtReset = true;
-        }
-      } else if (server.argName(i) == "SyncNTPAtReset") {
-        // true or false
-        Serial.print("Setting sync NTP at reset flag to ");
-        Serial.println(server.arg(i));
-        server.arg(i).toUpperCase();
-        if (server.arg(i) == "TRUE") {
-          config.syncNTPAtReset = true;
-        } else if (server.arg(i) == "FALSE") {
-          config.syncNTPAtReset = false;
-        } else {
-          Serial.print("Unknown boolean value ");
-          Serial.print(server.arg(i));
-          Serial.println("; defaulting to TRUE");
-          config.syncNTPAtReset = true;
         }
       } else if (server.argName(i) == "WakeEveryN") {
         Serial.print("Setting wake every N to ");
@@ -356,11 +359,6 @@ void handleConfig() {
     message += "checked";
   }
   message += "/></label><br/>\n";
-  message += "<label>Sync with NTP at reset <input type=\"checkbox\" name=\"SyncNTPAtReset\" ";
-  if (config.syncNTPAtReset) {
-    message += "checked";
-  }
-  message += "/></label><br/>\n";
   message += "<label>Wake every <input type=\"text\" name=\"WakeEveryN\" value=\"";
   message += config.wakeEveryN;
   message += "\"/> minutes</label><br/>\n";
@@ -408,6 +406,7 @@ void setupSPIFFS() {
   Serial.flush();
 }
 
+// Debug function, not used for now
 void dumpSPIFFSInfo() {
   FSInfo fs_info;
   SPIFFS.info(fs_info);
@@ -510,21 +509,6 @@ void readConfig() {
         Serial.println("; defaulting to TRUE");
         config.connectWiFiAtReset = true;
       }
-    } else if (key == "SyncNTPAtReset") {
-      // true or false
-      Serial.print("Setting sync NTP at reset flag to ");
-      Serial.println(value);
-      value.toUpperCase();
-      if (value == "TRUE") {
-        config.syncNTPAtReset = true;
-      } else if (value == "FALSE") {
-        config.syncNTPAtReset = false;
-      } else {
-        Serial.print("Unknown boolean value ");
-        Serial.print(value);
-        Serial.println("; defaulting to TRUE");
-        config.syncNTPAtReset = true;
-      }
     } else if (key == "WakeEveryN") {
       Serial.print("Setting wake every N to ");
       Serial.println(value);
@@ -602,12 +586,6 @@ void writeConfig() {
   } else {
     f.println("FALSE");
   }
-  f.print("SyncNTPAtReset=");
-  if (config.syncNTPAtReset == true) {
-    f.println("TRUE");
-  } else {
-    f.println("FALSE");
-  }
   f.print("WakeEveryN=");
   f.println(config.wakeEveryN);
   f.print("StayAwakeMins=");
@@ -621,7 +599,8 @@ void writeConfig() {
 
 void syncNTPTime() {
   Serial.println("Fetching time from NTP servers");
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  // Pacific time zone hard coded
+  configTime(-(8 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
   // Wait up to a minute for NTP sync
   uint8_t attempts = 0;
   while (attempts <= 120 && !time(nullptr)) {
@@ -669,13 +648,13 @@ void connectToWiFi() {
   }
 }
 
-void writeSystemTimeToRtc() {
-  Serial.println("Setting RTC time from system time");
+void writeNtpTimeToRtc() {
+  Serial.println("Setting RTC time from NTP time");
   struct tm *tmp;
   time_t now = time(nullptr);
   tmp = localtime(&now);
 
-  RtcDateTime systemDateTime = RtcDateTime(
+  RtcDateTime ntpDateTime = RtcDateTime(
     tmp->tm_year + 1900,
     tmp->tm_mon + 1,
     tmp->tm_mday,
@@ -684,7 +663,7 @@ void writeSystemTimeToRtc() {
     tmp->tm_sec
   );
 
-  Rtc.SetDateTime(systemDateTime);
+  Rtc.SetDateTime(ntpDateTime);
 }
 
 void rtcSetup() {
@@ -695,7 +674,85 @@ void rtcSetup() {
   }
 
   Rtc.Enable32kHzPin(false);
-  Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone); 
+  Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
+}
+
+void setRtcWakeupAlarm() {
+  uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
+  uint16_t secondsUntilWake = secondsTilNextSleep();
+  uint16_t secondsToStayAsleep;
+
+  Serial.println("Setting RTC wakeup alarm");
+  
+  if (secondsUntilWake <= secondsToStayAwake) {
+    secondsUntilWake += secondsToStayAwake; 
+    secondsToStayAwake *= 2;
+  }
+
+  secondsToStayAsleep = secondsUntilWake - secondsToStayAwake;
+  
+  RtcDateTime now = Rtc.GetDateTime();
+
+  String nowString;
+  getRtcDateTimeString(nowString);
+  Serial.print("Time is now ");
+  Serial.println(nowString);
+  Serial.print("secondsToStayAwake = ");
+  Serial.println(secondsToStayAwake);
+  Serial.print("secondsToStayAsleep = ");
+  Serial.println(secondsToStayAsleep);
+  Serial.print("secondsUntilWake = ");
+  Serial.println(secondsUntilWake);
+
+  uint16_t alarmSecond = now.Second() + ((secondsToStayAwake + secondsToStayAsleep) % 60);
+  uint16_t alarmMinute = now.Minute() + ((secondsToStayAwake + secondsToStayAsleep) / 60);
+
+  Serial.print("alarmSecond = ");
+  Serial.print(now.Second());
+  Serial.print(" + ((");
+  Serial.print(secondsToStayAwake);
+  Serial.print(" + ");
+  Serial.print(secondsToStayAsleep);
+  Serial.print(") % 60) == ");
+  Serial.println(alarmSecond);
+
+  Serial.print("alarmMinute = ");
+  Serial.print(now.Minute());
+  Serial.print(" + ((");
+  Serial.print(secondsToStayAwake);
+  Serial.print(" + ");
+  Serial.print(secondsToStayAsleep);
+  Serial.print(") % 60) == ");
+  Serial.println(alarmMinute);
+
+  if (alarmSecond >= 60) {
+    // Seconds overflowed, add to minute
+    alarmMinute += (alarmSecond / 60);
+    Serial.print("Alarm second overflowed, now ");
+    Serial.print(alarmSecond);
+    Serial.print("; alarm minute now ");
+    Serial.println(alarmMinute);
+  }
+  if (alarmMinute >= 60) {
+    // Minutes overflowed, but it doesn't matter since alarm fires
+    // based only on the minutes and seconds
+    alarmMinute %= 60;
+    Serial.print("Alarm minute overflowed, now ");
+    Serial.println(alarmMinute);
+  }
+  Serial.flush();
+
+  DS3231AlarmOne alarm = DS3231AlarmOne(
+    0, // dayOf; irrelevant with MinutesSecondsMatch
+    0, // hour; irrelevant with MinutesSecondsMatch
+    alarmMinute,
+    alarmSecond,
+    DS3231AlarmOneControl_MinutesSecondsMatch
+  );
+  
+  Rtc.SetAlarmOne(alarm);
+  Rtc.LatchAlarmsTriggeredFlags();
+  attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
 
 void basicSetup() {
@@ -731,27 +788,26 @@ void startWebServer() {
 void setup(void) {
   basicSetup();
   setupSPIFFS();
-  // DEBUG: Remove dumpSPIFFSInfo call
-  dumpSPIFFSInfo();
   readConfig();
   if (config.connectWiFiAtReset) {
     connectToWiFi();
-    if (config.syncNTPAtReset) {
-      syncNTPTime();
-    }
   }
 
-  // TODO: Pull system clock sync to RTC out of this function
   rtcSetup();
   startWebServer();
 }
 
 void loop(void) {
   server.handleClient();
+  if (alarmFired()) {
+    Serial.println("Alarm fired...");
+  }
+  /*
   if (shouldSleep()) {
     Serial.println("Should go to sleep now...");
   }
   if (shouldChime()) {
     Serial.println("Should chime now...");
   }
+  */
 }
