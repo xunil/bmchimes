@@ -1,3 +1,8 @@
+#if defined(ESP8266)
+#include <pgmspace.h>
+#else
+#include <avr/pgmspace.h>
+#endif
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -13,7 +18,7 @@
 #endif
 #include <RtcDS3231.h>
 
-#define RTC_ALARM_PIN 15
+#define RTC_ALARM_PIN 13
 
 struct BMChimeConfig {
   String deviceDescription;
@@ -53,17 +58,19 @@ void printStringAsHexDump(String str) {
 }
 
 void dateTimeStringFromRtcDateTime(RtcDateTime rtcDateTime, String& dateTimeBuf) {
-  dateTimeBuf = rtcDateTime.Year();
-  dateTimeBuf += "/";
-  dateTimeBuf += rtcDateTime.Month();
-  dateTimeBuf += "/";
-  dateTimeBuf += rtcDateTime.Day();
-  dateTimeBuf += " ";
-  dateTimeBuf += rtcDateTime.Hour();
-  dateTimeBuf += ":";
-  dateTimeBuf += rtcDateTime.Minute();
-  dateTimeBuf += ":";
-  dateTimeBuf += rtcDateTime.Second();
+  char datestring[20];
+  snprintf_P(datestring, 
+    20,
+    PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
+    rtcDateTime.Month(),
+    rtcDateTime.Day(),
+    rtcDateTime.Year(),
+    rtcDateTime.Hour(),
+    rtcDateTime.Minute(),
+    rtcDateTime.Second()
+  );
+
+  dateTimeBuf = String(datestring);
 }
 
 void getRtcDateTimeString(String& dateTimeBuf) {
@@ -672,81 +679,45 @@ void rtcSetup() {
     Serial.println("RTC was not actively running, starting now");
     Rtc.SetIsRunning(true);
   }
-
   Rtc.Enable32kHzPin(false);
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
 void setRtcWakeupAlarm() {
   uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
-  uint16_t secondsUntilWake = secondsTilNextSleep();
-  uint16_t secondsToStayAsleep;
+  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
+  RtcDateTime now = Rtc.GetDateTime();
+  time_t nowTime = now.Epoch32Time();
+  time_t wakeTime = nowTime + secondsTilNextWake;
+  time_t nextSleepTime = wakeTime + secondsToStayAwake;
+  uint16_t secondsTilNextSleep = nextSleepTime - nowTime;
+  uint16_t secondsTilWakeAfterNext = secondsTilNextWake + (config.wakeEveryN * 60);
+  time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
+  uint16_t sleepDuration = wakeTimeAfterNext - nextSleepTime;
+  RtcDateTime alarmDateTime = RtcDateTime(nextSleepTime);
 
   Serial.println("Setting RTC wakeup alarm");
   
-  if (secondsUntilWake <= secondsToStayAwake) {
-    secondsUntilWake += secondsToStayAwake; 
-    secondsToStayAwake *= 2;
-  }
-
-  secondsToStayAsleep = secondsUntilWake - secondsToStayAwake;
-  
-  RtcDateTime now = Rtc.GetDateTime();
-
   String nowString;
   getRtcDateTimeString(nowString);
   Serial.print("Time is now ");
   Serial.println(nowString);
   Serial.print("secondsToStayAwake = ");
   Serial.println(secondsToStayAwake);
-  Serial.print("secondsToStayAsleep = ");
-  Serial.println(secondsToStayAsleep);
-  Serial.print("secondsUntilWake = ");
-  Serial.println(secondsUntilWake);
-
-  uint16_t alarmSecond = now.Second() + ((secondsToStayAwake + secondsToStayAsleep) % 60);
-  uint16_t alarmMinute = now.Minute() + ((secondsToStayAwake + secondsToStayAsleep) / 60);
-
-  Serial.print("alarmSecond = ");
-  Serial.print(now.Second());
-  Serial.print(" + ((");
-  Serial.print(secondsToStayAwake);
-  Serial.print(" + ");
-  Serial.print(secondsToStayAsleep);
-  Serial.print(") % 60) == ");
-  Serial.println(alarmSecond);
-
-  Serial.print("alarmMinute = ");
-  Serial.print(now.Minute());
-  Serial.print(" + ((");
-  Serial.print(secondsToStayAwake);
-  Serial.print(" + ");
-  Serial.print(secondsToStayAsleep);
-  Serial.print(") % 60) == ");
-  Serial.println(alarmMinute);
-
-  if (alarmSecond >= 60) {
-    // Seconds overflowed, add to minute
-    alarmMinute += (alarmSecond / 60);
-    Serial.print("Alarm second overflowed, now ");
-    Serial.print(alarmSecond);
-    Serial.print("; alarm minute now ");
-    Serial.println(alarmMinute);
-  }
-  if (alarmMinute >= 60) {
-    // Minutes overflowed, but it doesn't matter since alarm fires
-    // based only on the minutes and seconds
-    alarmMinute %= 60;
-    Serial.print("Alarm minute overflowed, now ");
-    Serial.println(alarmMinute);
-  }
+  Serial.print("sleepDuration = ");
+  Serial.println(sleepDuration);
+  
+  String alarmDateTimeString;
+  dateTimeStringFromRtcDateTime(alarmDateTime, alarmDateTimeString);
+  Serial.print("Setting sleep alarm for ");
+  Serial.println(alarmDateTimeString);
   Serial.flush();
 
   DS3231AlarmOne alarm = DS3231AlarmOne(
     0, // dayOf; irrelevant with MinutesSecondsMatch
     0, // hour; irrelevant with MinutesSecondsMatch
-    alarmMinute,
-    alarmSecond,
+    alarmDateTime.Minute(),
+    alarmDateTime.Second(),
     DS3231AlarmOneControl_MinutesSecondsMatch
   );
   
@@ -755,8 +726,22 @@ void setRtcWakeupAlarm() {
   attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
 
+void setRtcWakeupEveryMinuteAlarm() {
+  DS3231AlarmTwo alarm = DS3231AlarmTwo(
+    0, // dayOf; irrelevant with MinutesSecondsMatch
+    0, // hour; irrelevant with MinutesSecondsMatch
+    0,
+    DS3231AlarmTwoControl_OncePerMinute
+  );
+  
+  Rtc.SetAlarmTwo(alarm);
+  Rtc.LatchAlarmsTriggeredFlags();
+  attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
+}
+
 void basicSetup() {
   pinMode(led, OUTPUT);
+  pinMode(RTC_ALARM_PIN, INPUT);
   digitalWrite(led, LOW);
   Serial.begin(115200);
   Serial.println("");
@@ -794,6 +779,9 @@ void setup(void) {
   }
 
   rtcSetup();
+  setRtcWakeupAlarm();
+  // Used for testing.
+  //setRtcWakeupEveryMinuteAlarm();
   startWebServer();
 }
 
@@ -802,12 +790,4 @@ void loop(void) {
   if (alarmFired()) {
     Serial.println("Alarm fired...");
   }
-  /*
-  if (shouldSleep()) {
-    Serial.println("Should go to sleep now...");
-  }
-  if (shouldChime()) {
-    Serial.println("Should chime now...");
-  }
-  */
 }

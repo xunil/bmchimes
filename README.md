@@ -1,5 +1,7 @@
 Controller firmware for ESP8266 modules for Burning Man chimes project.
 
+Using RtcDS3231 library https://github.com/Makuna/Rtc/
+
 TODO:
 * Add sleep functionality
   * On boot, figure out how long until next chime
