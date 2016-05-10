@@ -19,6 +19,8 @@
 #include <RtcDS3231.h>
 
 #define RTC_ALARM_PIN 13
+#define CHIME_PIN 12
+#define HEARTBEAT_PIN 2
 
 struct BMChimeConfig {
   String deviceDescription;
@@ -39,6 +41,8 @@ const int led = 2;
 
 RtcDS3231 Rtc;
 ESP8266WebServer server(80);
+
+uint16_t sleepDuration = 0;
 
 volatile bool interruptFlag = false;
 
@@ -106,36 +110,6 @@ uint16_t secondsTilNextN(uint8_t N) {
 
 uint16_t secondsTilNextChime() {
   return secondsTilNextN(config.chimeEveryN);
-}
-
-// XXX: Accurate?
-uint16_t secondsTilNextSleep() {
-  return secondsTilNextN(config.wakeEveryN);
-}
-
-void enterDeepSleep(uint16_t secondsToSleep) {
-  Serial.print("Entering deep sleep for ");
-  Serial.print(secondsToSleep);
-  Serial.println(" seconds...");
-  Serial.flush();
-  // deepSleep() expects microseconds
-  ESP.deepSleep(secondsToSleep * 1e6);
-}
-
-bool shouldSleep() {
-  uint16_t secondsTilSleep = secondsTilNextSleep();
-  uint16_t secondsTilChime = secondsTilNextChime();
-  if (secondsTilSleep <= 1 && secondsTilSleep < secondsTilChime) {
-    return true;
-  }
-  return false;
-}
-
-bool shouldChime() {
-  if (secondsTilNextChime() <= 1) {
-    return true;
-  }
-  return false;
 }
 
 bool alarmFired() {
@@ -459,23 +433,27 @@ void readConfig() {
     Serial.flush();
     String key = f.readStringUntil('=');
     key.trim();
+#ifdef DEBUG
     Serial.print("Read key ");
     Serial.print(key);
     Serial.print("; hex: ");
     printStringAsHexDump(key);
     Serial.println("");
+#endif
 
     String value = f.readStringUntil('\n');
     value.trim();
+#ifdef DEBUG
     Serial.print("Read value ");
     Serial.print(value);
     Serial.print("; hex: ");
     printStringAsHexDump(value);
     Serial.println("");
+#endif
 
     Serial.flush();
     if (key == "DeviceDescription") {
-      Serial.print("Setting Device Description");
+      Serial.print("Setting Device Description ");
       Serial.println(value);
       config.deviceDescription = value;
     } else if (key == "WiFiSSID") {
@@ -683,7 +661,7 @@ void rtcSetup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
-void setRtcWakeupAlarm() {
+void setRtcSleepAlarm() {
   uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
   RtcDateTime now = Rtc.GetDateTime();
@@ -693,10 +671,11 @@ void setRtcWakeupAlarm() {
   uint16_t secondsTilNextSleep = nextSleepTime - nowTime;
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + (config.wakeEveryN * 60);
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
-  uint16_t sleepDuration = wakeTimeAfterNext - nextSleepTime;
+  // sleepDuration is global
+  sleepDuration = wakeTimeAfterNext - nextSleepTime;
   RtcDateTime alarmDateTime = RtcDateTime(nextSleepTime);
 
-  Serial.println("Setting RTC wakeup alarm");
+  Serial.println("Setting RTC sleep alarm");
   
   String nowString;
   getRtcDateTimeString(nowString);
@@ -739,11 +718,26 @@ void setRtcWakeupEveryMinuteAlarm() {
   attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
 
+void clearRtcAlarms() {
+  DS3231AlarmOne alarmOne = DS3231AlarmOne(0, 0, 0, 61,
+    DS3231AlarmOneControl_HoursMinutesSecondsDayOfMonthMatch
+  );
+  Rtc.SetAlarmOne(alarmOne);
+
+  DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(32, 0, 0,
+    DS3231AlarmTwoControl_HoursMinutesDayOfMonthMatch
+  );
+  Rtc.SetAlarmTwo(alarmTwo);
+  Rtc.LatchAlarmsTriggeredFlags();
+}
+
 void basicSetup() {
-  pinMode(led, OUTPUT);
+  pinMode(HEARTBEAT_PIN, OUTPUT);
+  pinMode(CHIME_PIN, OUTPUT);
   pinMode(RTC_ALARM_PIN, INPUT);
-  digitalWrite(led, LOW);
-  Serial.begin(115200);
+  digitalWrite(HEARTBEAT_PIN, LOW);
+  digitalWrite(CHIME_PIN, LOW);
+  Serial.begin(74880);
   Serial.println("");
   Wire.begin();
 }
@@ -779,15 +773,26 @@ void setup(void) {
   }
 
   rtcSetup();
-  setRtcWakeupAlarm();
+  clearRtcAlarms();
+  setRtcSleepAlarm();
   // Used for testing.
   //setRtcWakeupEveryMinuteAlarm();
   startWebServer();
 }
 
 void loop(void) {
+  String nowString;
+
   server.handleClient();
   if (alarmFired()) {
-    Serial.println("Alarm fired...");
+    Serial.println("Alarm fired!");
+    getRtcDateTimeString(nowString);
+    Serial.print("Time is now ");
+    Serial.println(nowString);
+    Serial.print("Sleeping for ");
+    Serial.print(sleepDuration);
+    Serial.println(" seconds");
+    // deepSleep expects a number in microseconds
+    ESP.deepSleep(sleepDuration * 1e6);
   }
 }
