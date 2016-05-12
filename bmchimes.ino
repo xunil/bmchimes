@@ -108,11 +108,7 @@ uint16_t secondsTilNextN(uint8_t N) {
   return seconds;
 }
 
-uint16_t secondsTilNextChime() {
-  return secondsTilNextN(config.chimeEveryN);
-}
-
-bool alarmFired() {
+bool alarmFired(DS3231AlarmFlag& flag) {
   bool wasAlarmed = false;
   if (interruptFlag) { // check our flag that gets sets in the interrupt
     wasAlarmed = true;
@@ -120,14 +116,7 @@ bool alarmFired() {
 
     // this gives us which alarms triggered and
     // then allows for others to trigger again
-    DS3231AlarmFlag flag = Rtc.LatchAlarmsTriggeredFlags();
-
-    if (flag & DS3231AlarmFlag_Alarm1) {
-      Serial.println("alarm one triggered");
-    }
-    if (flag & DS3231AlarmFlag_Alarm2) {
-      Serial.println("alarm two triggered");
-    }
+    flag = Rtc.LatchAlarmsTriggeredFlags();
   }
   return wasAlarmed;
 }
@@ -664,16 +653,20 @@ void rtcSetup() {
 void setRtcSleepAlarm() {
   uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
+  uint16_t secondsTilNextChime = secondsTilNextN(config.chimeEveryN);
   RtcDateTime now = Rtc.GetDateTime();
   time_t nowTime = now.Epoch32Time();
   time_t wakeTime = nowTime + secondsTilNextWake;
+  time_t chimeTime = nowTime + secondsTilNextChime;
   time_t nextSleepTime = wakeTime + secondsToStayAwake;
-  uint16_t secondsTilNextSleep = nextSleepTime - nowTime;
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + (config.wakeEveryN * 60);
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
+  time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
   // sleepDuration is global
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
-  RtcDateTime alarmDateTime = RtcDateTime(nextSleepTime);
+  RtcDateTime wakeAlarmDateTime = RtcDateTime(wakeTime);
+  RtcDateTime sleepAlarmDateTime = RtcDateTime(nextSleepTime);
+  RtcDateTime chimeAlarmDateTime = RtcDateTime(chimeTime);
 
   Serial.println("Setting RTC sleep alarm");
   
@@ -686,21 +679,48 @@ void setRtcSleepAlarm() {
   Serial.print("sleepDuration = ");
   Serial.println(sleepDuration);
   
-  String alarmDateTimeString;
-  dateTimeStringFromRtcDateTime(alarmDateTime, alarmDateTimeString);
-  Serial.print("Setting sleep alarm for ");
-  Serial.println(alarmDateTimeString);
+  String sleepAlarmDateTimeString;
+  String chimeAlarmDateTimeString;
+  dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
+  dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
+
+  Serial.print("Chime scheduled for ");
+  Serial.println(chimeAlarmDateTimeString);
+  Serial.flush();
+
+  // Determine if the next chime will happen between the next sleep and the next wake
+  if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
+    // Chime will happen while we are asleep!  Skip the next sleep.
+    sleepAlarmDateTime = RtcDateTime(sleepTimeAfterNext);
+    Serial.println("Chime scheduled to occur during sleep, rescheduling sleep to avoid conflict");
+    Serial.print("Sleep was scheduled for ");
+    Serial.println(sleepAlarmDateTimeString);
+    dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
+    
+  }
+
+  Serial.print("Sleep now scheduled for ");
+  Serial.println(sleepAlarmDateTimeString);
   Serial.flush();
 
   DS3231AlarmOne alarm = DS3231AlarmOne(
     0, // dayOf; irrelevant with MinutesSecondsMatch
     0, // hour; irrelevant with MinutesSecondsMatch
-    alarmDateTime.Minute(),
-    alarmDateTime.Second(),
+    sleepAlarmDateTime.Minute(),
+    sleepAlarmDateTime.Second(),
     DS3231AlarmOneControl_MinutesSecondsMatch
   );
   
   Rtc.SetAlarmOne(alarm);
+
+  DS3231AlarmTwo alarm = DS3231AlarmTwo(
+    0, // dayOf; irrelevant with HoursMinutesMatch
+    chimeAlarmDateTime.Hour(),
+    chimeAlarmDateTime.Minute(),
+    DS3231AlarmTwoControl_HoursMinutesMatch
+  );
+  
+  Rtc.SetAlarmTwo(alarm);
   Rtc.LatchAlarmsTriggeredFlags();
   attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
@@ -785,14 +805,23 @@ void loop(void) {
 
   server.handleClient();
   if (alarmFired()) {
-    Serial.println("Alarm fired!");
     getRtcDateTimeString(nowString);
     Serial.print("Time is now ");
     Serial.println(nowString);
-    Serial.print("Sleeping for ");
-    Serial.print(sleepDuration);
-    Serial.println(" seconds");
-    // deepSleep expects a number in microseconds
-    ESP.deepSleep(sleepDuration * 1e6);
+    Serial.print("Alarm ");
+    if (flag & DS3231AlarmFlag_Alarm1) {
+      Serial.println("one fired");
+      Serial.print("Sleeping for ");
+      Serial.print(sleepDuration);
+      Serial.println(" seconds");
+      // deepSleep expects a number in microseconds
+      ESP.deepSleep(sleepDuration * 1e6);
+    }
+
+    if (flag & DS3231AlarmFlag_Alarm2) {
+      Serial.println("two fired");
+      // Time to Chime!
+      Serial.println("Would chime now!");
+    }
   }
 }
