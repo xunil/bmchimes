@@ -703,7 +703,7 @@ void setRtcSleepAlarm() {
   Serial.println(sleepAlarmDateTimeString);
   Serial.flush();
 
-  DS3231AlarmOne alarm = DS3231AlarmOne(
+  DS3231AlarmOne alarmOne = DS3231AlarmOne(
     0, // dayOf; irrelevant with MinutesSecondsMatch
     0, // hour; irrelevant with MinutesSecondsMatch
     sleepAlarmDateTime.Minute(),
@@ -711,16 +711,16 @@ void setRtcSleepAlarm() {
     DS3231AlarmOneControl_MinutesSecondsMatch
   );
   
-  Rtc.SetAlarmOne(alarm);
+  Rtc.SetAlarmOne(alarmOne);
 
-  DS3231AlarmTwo alarm = DS3231AlarmTwo(
+  DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(
     0, // dayOf; irrelevant with HoursMinutesMatch
     chimeAlarmDateTime.Hour(),
     chimeAlarmDateTime.Minute(),
     DS3231AlarmTwoControl_HoursMinutesMatch
   );
   
-  Rtc.SetAlarmTwo(alarm);
+  Rtc.SetAlarmTwo(alarmTwo);
   Rtc.LatchAlarmsTriggeredFlags();
   attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
@@ -802,9 +802,10 @@ void setup(void) {
 
 void loop(void) {
   String nowString;
+  DS3231AlarmFlag flag;
 
   server.handleClient();
-  if (alarmFired()) {
+  if (alarmFired(flag)) {
     getRtcDateTimeString(nowString);
     Serial.print("Time is now ");
     Serial.println(nowString);
