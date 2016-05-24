@@ -20,7 +20,9 @@
 
 #define RTC_ALARM_PIN 13
 #define CHIME_PIN 12
-#define HEARTBEAT_PIN 2
+#define CHIME_STOP_SWITCH_PIN 14
+
+#define CHIME_TIMEOUT_MS 30000  // 30 seconds
 
 struct BMChimeConfig {
   String deviceDescription;
@@ -29,6 +31,7 @@ struct BMChimeConfig {
   // From ESP8266WiFi.h
   WiFiMode wiFiMode;
   bool connectWiFiAtReset;
+  bool sleepEnabled;
   uint8_t wakeEveryN;
   uint8_t stayAwakeMins;
   uint8_t chimeEveryN; 
@@ -43,12 +46,24 @@ RtcDS3231 Rtc;
 ESP8266WebServer server(80);
 
 uint16_t sleepDuration = 0;
+uint32_t chimeStartMillis = 0;
 
-volatile bool interruptFlag = false;
+bool chiming = false;
+
+volatile bool chimeStopSwitchFlag = false;
+volatile bool alarmInterruptFlag = false;
 
 // Utility functions
 void alarmISR() {
-  interruptFlag = true;
+  alarmInterruptFlag = true;
+}
+
+void chimeStopSwitchISR() {
+  if (digitalRead(CHIME_STOP_SWITCH_PIN) == HIGH) {
+    chimeStopSwitchFlag = false;
+  } else {
+    chimeStopSwitchFlag = true;
+  }
 }
 
 void printStringAsHexDump(String str) {
@@ -110,15 +125,23 @@ uint16_t secondsTilNextN(uint8_t N) {
 
 bool alarmFired(DS3231AlarmFlag& flag) {
   bool wasAlarmed = false;
-  if (interruptFlag) { // check our flag that gets sets in the interrupt
+  if (alarmInterruptFlag) { // check our flag that gets sets in the interrupt
     wasAlarmed = true;
-    interruptFlag = false; // reset the flag
+    alarmInterruptFlag = false; // reset the flag
 
     // this gives us which alarms triggered and
     // then allows for others to trigger again
     flag = Rtc.LatchAlarmsTriggeredFlags();
   }
   return wasAlarmed;
+}
+
+void chimeMotorOn() {
+  digitalWrite(CHIME_PIN, HIGH);
+}
+
+void chimeMotorOff() {
+  digitalWrite(CHIME_PIN, LOW);
 }
 
 
@@ -272,6 +295,21 @@ void handleConfig() {
           Serial.println("; defaulting to TRUE");
           config.connectWiFiAtReset = true;
         }
+      } else if (server.argName(i) == "SleepEnabled") {
+        // true or false
+        Serial.print("Setting sleep enabled flag to ");
+        Serial.println(server.arg(i));
+        server.arg(i).toUpperCase();
+        if (server.arg(i) == "TRUE") {
+          config.sleepEnabled = true;
+        } else if (server.arg(i) == "FALSE") {
+          config.sleepEnabled = false;
+        } else {
+          Serial.print("Unknown boolean value ");
+          Serial.print(server.arg(i));
+          Serial.println("; defaulting to TRUE");
+          config.sleepEnabled = true;
+        }
       } else if (server.argName(i) == "WakeEveryN") {
         Serial.print("Setting wake every N to ");
         Serial.println(server.arg(i));
@@ -326,6 +364,11 @@ void handleConfig() {
   message += "</select></label><br/>\n";
   message += "<label>Connect to WiFi at reset <input type=\"checkbox\" name=\"ConnectWiFiAtReset\" ";
   if (config.connectWiFiAtReset) {
+    message += "checked";
+  }
+  message += "/></label><br/>\n";
+  message += "<label>Sleep enabled <input type=\"checkbox\" name=\"SleepEnabled\" ";
+  if (config.sleepEnabled) {
     message += "checked";
   }
   message += "/></label><br/>\n";
@@ -483,6 +526,21 @@ void readConfig() {
         Serial.println("; defaulting to TRUE");
         config.connectWiFiAtReset = true;
       }
+    } else if (key == "SleepEnabled") {
+      // true or false
+      Serial.print("Setting sleep enabled flag to ");
+      Serial.println(value);
+      value.toUpperCase();
+      if (value == "TRUE") {
+        config.sleepEnabled = true;
+      } else if (value == "FALSE") {
+        config.sleepEnabled = false;
+      } else {
+        Serial.print("Unknown boolean value ");
+        Serial.print(value);
+        Serial.println("; defaulting to TRUE");
+        config.sleepEnabled = true;
+      }
     } else if (key == "WakeEveryN") {
       Serial.print("Setting wake every N to ");
       Serial.println(value);
@@ -556,6 +614,12 @@ void writeConfig() {
   }
   f.print("ConnectWiFiAtReset=");
   if (config.connectWiFiAtReset == true) {
+    f.println("TRUE");
+  } else {
+    f.println("FALSE");
+  }
+  f.print("SleepEnabled=");
+  if (config.sleepEnabled == true) {
     f.println("TRUE");
   } else {
     f.println("FALSE");
@@ -650,7 +714,7 @@ void rtcSetup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
-void setRtcSleepAlarm() {
+void setRtcAlarms() {
   uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
   uint16_t secondsTilNextChime = secondsTilNextN(config.chimeEveryN);
@@ -668,28 +732,45 @@ void setRtcSleepAlarm() {
   RtcDateTime sleepAlarmDateTime = RtcDateTime(nextSleepTime);
   RtcDateTime chimeAlarmDateTime = RtcDateTime(chimeTime);
 
-  Serial.println("Setting RTC sleep alarm");
-  
   String nowString;
   getRtcDateTimeString(nowString);
-  Serial.print("Time is now ");
-  Serial.println(nowString);
-  Serial.print("secondsToStayAwake = ");
-  Serial.println(secondsToStayAwake);
-  Serial.print("sleepDuration = ");
-  Serial.println(sleepDuration);
-  
   String sleepAlarmDateTimeString;
-  String chimeAlarmDateTimeString;
   dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
+  String chimeAlarmDateTimeString;
   dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
+  Serial.print("Time is now ");
+  Serial.println(nowString);
+
+  if (config.sleepEnabled) {
+    Serial.println("Setting RTC sleep alarm");
+    
+    Serial.print("secondsToStayAwake = ");
+    Serial.println(secondsToStayAwake);
+    Serial.print("sleepDuration = ");
+    Serial.println(sleepDuration);
+    Serial.print("Sleep now scheduled for ");
+    Serial.println(sleepAlarmDateTimeString);
+    Serial.flush();
+
+    // Alarm one is the sleep alarm
+    DS3231AlarmOne alarmOne = DS3231AlarmOne(
+      0, // dayOf; irrelevant with MinutesSecondsMatch
+      0, // hour; irrelevant with MinutesSecondsMatch
+      sleepAlarmDateTime.Minute(),
+      sleepAlarmDateTime.Second(),
+      DS3231AlarmOneControl_MinutesSecondsMatch
+    );
+    
+    Rtc.SetAlarmOne(alarmOne);
+  }
+  
   Serial.print("Chime scheduled for ");
   Serial.println(chimeAlarmDateTimeString);
   Serial.flush();
 
   // Determine if the next chime will happen between the next sleep and the next wake
-  if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
+  if (config.sleepEnabled && chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
     // Chime will happen while we are asleep!  Skip the next sleep.
     sleepAlarmDateTime = RtcDateTime(sleepTimeAfterNext);
     Serial.println("Chime scheduled to occur during sleep, rescheduling sleep to avoid conflict");
@@ -699,20 +780,7 @@ void setRtcSleepAlarm() {
     
   }
 
-  Serial.print("Sleep now scheduled for ");
-  Serial.println(sleepAlarmDateTimeString);
-  Serial.flush();
-
-  DS3231AlarmOne alarmOne = DS3231AlarmOne(
-    0, // dayOf; irrelevant with MinutesSecondsMatch
-    0, // hour; irrelevant with MinutesSecondsMatch
-    sleepAlarmDateTime.Minute(),
-    sleepAlarmDateTime.Second(),
-    DS3231AlarmOneControl_MinutesSecondsMatch
-  );
-  
-  Rtc.SetAlarmOne(alarmOne);
-
+  // Alarm two is the chime alarm
   DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(
     0, // dayOf; irrelevant with HoursMinutesMatch
     chimeAlarmDateTime.Hour(),
@@ -751,12 +819,15 @@ void clearRtcAlarms() {
   Rtc.LatchAlarmsTriggeredFlags();
 }
 
-void basicSetup() {
-  pinMode(HEARTBEAT_PIN, OUTPUT);
+void chimeSetup() {
   pinMode(CHIME_PIN, OUTPUT);
-  pinMode(RTC_ALARM_PIN, INPUT);
-  digitalWrite(HEARTBEAT_PIN, LOW);
   digitalWrite(CHIME_PIN, LOW);
+  pinMode(CHIME_STOP_SWITCH_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(CHIME_STOP_SWITCH_PIN), chimeStopSwitchISR, CHANGE);
+}
+
+void basicSetup() {
+  pinMode(RTC_ALARM_PIN, INPUT);
   Serial.begin(74880);
   Serial.println("");
   Wire.begin();
@@ -794,9 +865,10 @@ void setup(void) {
 
   rtcSetup();
   clearRtcAlarms();
-  setRtcSleepAlarm();
+  setRtcAlarms();
   // Used for testing.
   //setRtcWakeupEveryMinuteAlarm();
+  chimeSetup();
   startWebServer();
 }
 
@@ -809,20 +881,46 @@ void loop(void) {
     getRtcDateTimeString(nowString);
     Serial.print("Time is now ");
     Serial.println(nowString);
-    Serial.print("Alarm ");
     if (flag & DS3231AlarmFlag_Alarm1) {
-      Serial.println("one fired");
-      Serial.print("Sleeping for ");
-      Serial.print(sleepDuration);
-      Serial.println(" seconds");
-      // deepSleep expects a number in microseconds
-      ESP.deepSleep(sleepDuration * 1e6);
+      Serial.println("Sleep alarm (alarm one) fired");
+      if (config.sleepEnabled) {
+        Serial.print("Sleeping for ");
+        Serial.print(sleepDuration);
+        Serial.println(" seconds");
+        // deepSleep expects a number in microseconds
+        ESP.deepSleep(sleepDuration * 1e6);
+      } else {
+        Serial.println("Sleep disabled in configuration, skipping sleep!");
+      }
     }
 
     if (flag & DS3231AlarmFlag_Alarm2) {
-      Serial.println("two fired");
+      Serial.println("Chime alarm (alarm two) fired");
       // Time to Chime!
-      Serial.println("Would chime now!");
+      Serial.println("Chiming!");
+      // Set a flag indicating chiming has begun
+      chiming = true;
+      // Store time chiming began
+      chimeStartMillis = millis();
+      // Trigger chime GPIO
+      chimeMotorOn();
+    }
+  }
+
+  // Check time every loop, turn off chime GPIO if timeout
+  if (chiming) {
+    // Check for stop conditions (timeout, stop switch)
+    if ((millis() - chimeStartMillis > CHIME_TIMEOUT_MS) || chimeStopSwitchFlag) {
+      // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
+      if (chimeStopSwitchFlag) {
+        Serial.println("Chime stop switch activated, turning off chime motor");
+      } else {
+        Serial.println("Timeout waiting for chime stop switch activation!");
+      }
+      chimeMotorOff();
+      chiming = false;
+      // Schedule next chime
+      setRtcAlarms();
     }
   }
 }
