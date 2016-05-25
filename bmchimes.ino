@@ -149,7 +149,7 @@ void chimeMotorOff() {
 
 void handleRoot() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
-  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
+  float dieTempF = (dieTemp.AsFloat()*(9/5))+32;
 
   String rtcDateTimeStr;
   getRtcDateTimeString(rtcDateTimeStr);
@@ -285,9 +285,9 @@ void handleConfig() {
         Serial.print("Setting connect WiFi at reset flag to ");
         Serial.println(server.arg(i));
         server.arg(i).toUpperCase();
-        if (server.arg(i) == "TRUE") {
+        if (server.arg(i) == "TRUE" || server.arg(i) == "ON") {
           config.connectWiFiAtReset = true;
-        } else if (server.arg(i) == "FALSE") {
+        } else if (server.arg(i) == "FALSE" || server.arg(i) == "OFF") {
           config.connectWiFiAtReset = false;
         } else {
           Serial.print("Unknown boolean value ");
@@ -300,9 +300,9 @@ void handleConfig() {
         Serial.print("Setting sleep enabled flag to ");
         Serial.println(server.arg(i));
         server.arg(i).toUpperCase();
-        if (server.arg(i) == "TRUE") {
+        if (server.arg(i) == "TRUE" || server.arg(i) == "ON") {
           config.sleepEnabled = true;
-        } else if (server.arg(i) == "FALSE") {
+        } else if (server.arg(i) == "FALSE" || server.arg(i) == "OFF") {
           config.sleepEnabled = false;
         } else {
           Serial.print("Unknown boolean value ");

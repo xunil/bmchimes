@@ -11,6 +11,3 @@ TODO:
   * If all three fail, become AP instead
   * Add option to go straight to AP mode
 * Add ADC measurement and recording for battery voltage
-
-BUGS:
-* handleConfig() doesn't handle checkboxes correctly, browser gives a value of "on" for a checked checkbox, code expects TRUE / FALSE
