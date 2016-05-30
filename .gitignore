@@ -1,2 +1,4 @@
 bmchimes.cfg
 *.swp
+*.bak
+*-cache.lib

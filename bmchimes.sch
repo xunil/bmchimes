@@ -1,0 +1,392 @@
+EESchema Schematic File Version 2
+LIBS:power
+LIBS:device
+LIBS:transistors
+LIBS:conn
+LIBS:linear
+LIBS:regul
+LIBS:74xx
+LIBS:cmos4000
+LIBS:adc-dac
+LIBS:memory
+LIBS:xilinx
+LIBS:microcontrollers
+LIBS:dsp
+LIBS:microchip
+LIBS:analog_switches
+LIBS:motorola
+LIBS:texas
+LIBS:intel
+LIBS:audio
+LIBS:interface
+LIBS:digital-audio
+LIBS:philips
+LIBS:display
+LIBS:cypress
+LIBS:siliconi
+LIBS:opto
+LIBS:atmel
+LIBS:contrib
+LIBS:valves
+LIBS:esp07
+EELAYER 25 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L ESP07 U?
+U 1 1 574B4F8B
+P 3750 3800
+F 0 "U?" H 3750 4300 60  0000 C CNN
+F 1 "ESP07" H 3750 3300 60  0000 C CNN
+F 2 "" H 3800 4250 60  0000 C CNN
+F 3 "" H 3800 4250 60  0000 C CNN
+	1    3750 3800
+	1    0    0    -1  
+$EndComp
+$Comp
+L +3V3 #PWR?
+U 1 1 574B505D
+P 2700 2900
+F 0 "#PWR?" H 2700 2750 50  0001 C CNN
+F 1 "+3V3" H 2700 3040 50  0000 C CNN
+F 2 "" H 2700 2900 50  0000 C CNN
+F 3 "" H 2700 2900 50  0000 C CNN
+	1    2700 2900
+	1    0    0    -1  
+$EndComp
+$Comp
+L GND #PWR?
+U 1 1 574B5073
+P 4400 4650
+F 0 "#PWR?" H 4400 4400 50  0001 C CNN
+F 1 "GND" H 4400 4500 50  0000 C CNN
+F 2 "" H 4400 4650 50  0000 C CNN
+F 3 "" H 4400 4650 50  0000 C CNN
+	1    4400 4650
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B508B
+P 2900 3200
+F 0 "R?" V 2980 3200 50  0000 C CNN
+F 1 "R" V 2900 3200 50  0000 C CNN
+F 2 "" V 2830 3200 50  0000 C CNN
+F 3 "" H 2900 3200 50  0000 C CNN
+	1    2900 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B5138
+P 2700 3200
+F 0 "R?" V 2780 3200 50  0000 C CNN
+F 1 "R" V 2700 3200 50  0000 C CNN
+F 2 "" V 2630 3200 50  0000 C CNN
+F 3 "" H 2700 3200 50  0000 C CNN
+	1    2700 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L +12V #PWR?
+U 1 1 574B52CF
+P 2450 2900
+F 0 "#PWR?" H 2450 2750 50  0001 C CNN
+F 1 "+12V" H 2450 3040 50  0000 C CNN
+F 2 "" H 2450 2900 50  0000 C CNN
+F 3 "" H 2450 2900 50  0000 C CNN
+	1    2450 2900
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B53DF
+P 2450 3200
+F 0 "R?" V 2530 3200 50  0000 C CNN
+F 1 "R" V 2450 3200 50  0000 C CNN
+F 2 "" V 2380 3200 50  0000 C CNN
+F 3 "" H 2450 3200 50  0000 C CNN
+	1    2450 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B543C
+P 2450 3700
+F 0 "R?" V 2530 3700 50  0000 C CNN
+F 1 "R" V 2450 3700 50  0000 C CNN
+F 2 "" V 2380 3700 50  0000 C CNN
+F 3 "" H 2450 3700 50  0000 C CNN
+	1    2450 3700
+	1    0    0    -1  
+$EndComp
+$Comp
+L GND #PWR?
+U 1 1 574B54AD
+P 2450 3850
+F 0 "#PWR?" H 2450 3600 50  0001 C CNN
+F 1 "GND" H 2450 3700 50  0000 C CNN
+F 2 "" H 2450 3850 50  0000 C CNN
+F 3 "" H 2450 3850 50  0000 C CNN
+	1    2450 3850
+	1    0    0    -1  
+$EndComp
+$Comp
+L CONN_01X02 P?
+U 1 1 574B5615
+P 5000 4300
+F 0 "P?" H 5100 4300 50  0000 C CNN
+F 1 "CONN_01X02" H 5000 4150 50  0000 C CNN
+F 2 "" H 5000 4300 50  0000 C CNN
+F 3 "" H 5000 4300 50  0000 C CNN
+	1    5000 4300
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B569C
+P 4600 4500
+F 0 "R?" V 4680 4500 50  0000 C CNN
+F 1 "R" V 4600 4500 50  0000 C CNN
+F 2 "" V 4530 4500 50  0000 C CNN
+F 3 "" H 4600 4500 50  0000 C CNN
+	1    4600 4500
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B5840
+P 4600 3050
+F 0 "R?" V 4680 3050 50  0000 C CNN
+F 1 "R" V 4600 3050 50  0000 C CNN
+F 2 "" V 4530 3050 50  0000 C CNN
+F 3 "" H 4600 3050 50  0000 C CNN
+	1    4600 3050
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2900 3450 3200 3450
+Wire Wire Line
+	2900 3050 2900 2900
+Wire Wire Line
+	2700 2900 4750 2900
+Wire Wire Line
+	2700 3650 3200 3650
+Wire Wire Line
+	2700 2900 2700 3050
+Wire Wire Line
+	2900 3350 2900 3750
+Wire Wire Line
+	2900 3750 3200 3750
+Wire Wire Line
+	2300 3550 3200 3550
+Wire Wire Line
+	2450 3350 2450 3550
+Wire Wire Line
+	2450 3050 2450 2900
+Wire Wire Line
+	4300 4150 4400 4150
+Wire Wire Line
+	4400 4150 4400 4650
+Wire Wire Line
+	2700 4650 5550 4650
+Wire Wire Line
+	4600 3850 4300 3850
+Wire Wire Line
+	4600 3200 4600 3850
+Connection ~ 2900 2900
+Connection ~ 2900 3450
+$Comp
+L CONN_01X06 P?
+U 1 1 574B5A83
+P 5600 3450
+F 0 "P?" H 5600 3800 50  0000 C CNN
+F 1 "CONN_01X06" V 5700 3450 50  0000 C CNN
+F 2 "" H 5600 3450 50  0000 C CNN
+F 3 "" H 5600 3450 50  0000 C CNN
+	1    5600 3450
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3200 3450 3200 3200
+Wire Wire Line
+	3200 3200 5400 3200
+Wire Wire Line
+	4300 3300 4300 3500
+Wire Wire Line
+	4300 3300 5400 3300
+Wire Wire Line
+	4300 3550 4400 3550
+Wire Wire Line
+	4400 3400 4400 3600
+Wire Wire Line
+	4400 3400 5400 3400
+Wire Wire Line
+	5400 4650 5400 3700
+Connection ~ 4600 4650
+NoConn ~ 5400 3500
+NoConn ~ 5400 3600
+$Comp
+L C C?
+U 1 1 574B5BCE
+P 2700 4400
+F 0 "C?" H 2725 4500 50  0000 L CNN
+F 1 "C" H 2725 4300 50  0000 L CNN
+F 2 "" H 2738 4250 50  0000 C CNN
+F 3 "" H 2700 4400 50  0000 C CNN
+	1    2700 4400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2450 4150 3200 4150
+Connection ~ 4400 4650
+$Comp
+L CONN_01X16 P?
+U 1 1 574B5DFB
+P 6700 3900
+F 0 "P?" H 6700 4750 50  0000 C CNN
+F 1 "CONN_01X16" V 6800 3900 50  0000 C CNN
+F 2 "" H 6700 3900 50  0000 C CNN
+F 3 "" H 6700 3900 50  0000 C CNN
+	1    6700 3900
+	1    0    0    -1  
+$EndComp
+Text GLabel 6500 3150 0    60   Input ~ 0
+RESET
+Text GLabel 6500 3250 0    60   Input ~ 0
+TXD
+Text GLabel 6500 3350 0    60   Input ~ 0
+RXD
+Text GLabel 6500 3450 0    60   Input ~ 0
+GPIO2
+Text GLabel 6500 3550 0    60   Input ~ 0
+GPIO4
+Text GLabel 6500 3650 0    60   Input ~ 0
+GPIO5
+Text GLabel 6500 3750 0    60   Input ~ 0
+GPIO12
+Text GLabel 6500 3850 0    60   Input ~ 0
+GPIO13
+Text GLabel 6500 3950 0    60   Input ~ 0
+GPIO14
+Text GLabel 6500 4350 0    60   Input ~ 0
+12V
+Text GLabel 6500 4250 0    60   Input ~ 0
+3V3
+Text GLabel 6500 4150 0    60   Input ~ 0
+ADC
+Text GLabel 6500 4450 0    60   Input ~ 0
+GND
+Text GLabel 6500 4550 0    60   Input ~ 0
+GND
+Text GLabel 6500 4650 0    60   Input ~ 0
+GND
+Text GLabel 5550 4650 2    60   Input ~ 0
+GND
+Text GLabel 2300 2900 0    60   Input ~ 0
+12V
+Text GLabel 4750 2900 2    60   Input ~ 0
+3V3
+Text GLabel 2300 3550 0    60   Input ~ 0
+ADC
+Wire Wire Line
+	2450 2900 2300 2900
+Connection ~ 2450 3550
+Connection ~ 4600 2900
+Connection ~ 5400 4650
+Text GLabel 4750 3700 2    60   Input ~ 0
+GPIO5
+Text GLabel 4750 3800 2    60   Input ~ 0
+GPIO4
+Wire Wire Line
+	4600 4350 4800 4350
+Wire Wire Line
+	4300 4050 4750 4050
+Text GLabel 4750 3500 2    60   Input ~ 0
+TXD
+Text GLabel 4750 3900 2    60   Input ~ 0
+GPIO2
+Text GLabel 4750 3600 2    60   Input ~ 0
+RXD
+Wire Wire Line
+	4400 3600 4750 3600
+Connection ~ 4400 3550
+Wire Wire Line
+	4300 3500 4750 3500
+Connection ~ 4300 3450
+Wire Wire Line
+	4300 3650 4750 3650
+Wire Wire Line
+	4750 3650 4750 3700
+Wire Wire Line
+	4300 3750 4750 3750
+Wire Wire Line
+	4750 3750 4750 3800
+Wire Wire Line
+	4300 3950 4750 3950
+Wire Wire Line
+	4750 3950 4750 3900
+Text GLabel 3150 3850 0    60   Input ~ 0
+GPIO14
+Text GLabel 3150 3950 0    60   Input ~ 0
+GPIO12
+Text GLabel 3150 4050 0    60   Input ~ 0
+GPIO13
+Wire Wire Line
+	3150 3850 3200 3850
+Wire Wire Line
+	3150 3950 3200 3950
+Wire Wire Line
+	3150 4050 3200 4050
+Text GLabel 4750 4050 2    60   Input ~ 0
+GPIO15
+Text GLabel 6500 4050 0    60   Input ~ 0
+GPIO15
+$Comp
+L +3V3 #PWR?
+U 1 1 574B7687
+P 2000 4150
+F 0 "#PWR?" H 2000 4000 50  0001 C CNN
+F 1 "+3V3" H 2000 4290 50  0000 C CNN
+F 2 "" H 2000 4150 50  0000 C CNN
+F 3 "" H 2000 4150 50  0000 C CNN
+	1    2000 4150
+	1    0    0    -1  
+$EndComp
+$Comp
+L R R?
+U 1 1 574B76BC
+P 2300 4150
+F 0 "R?" V 2380 4150 50  0000 C CNN
+F 1 "R" V 2300 4150 50  0000 C CNN
+F 2 "" V 2230 4150 50  0000 C CNN
+F 3 "" H 2300 4150 50  0000 C CNN
+	1    2300 4150
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2000 4150 2150 4150
+Wire Wire Line
+	2700 3350 2700 3650
+Wire Wire Line
+	2700 4650 2700 4550
+Wire Wire Line
+	2700 4250 2700 4150
+Connection ~ 2700 4150
+Wire Wire Line
+	4600 4050 4600 4250
+Wire Wire Line
+	4600 4250 4800 4250
+Connection ~ 4600 4050
+$EndSCHEMATC
