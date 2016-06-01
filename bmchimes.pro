@@ -1,4 +1,4 @@
-update=5/29/2016 1:20:05 PM
+update=5/30/2016 1:58:45 PM
 version=1
 last_client=kicad
 [pcbnew]
@@ -59,3 +59,4 @@ LibName27=atmel
 LibName28=contrib
 LibName29=valves
 LibName30=esp07
+LibName31=74hc7541
