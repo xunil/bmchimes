@@ -1,4 +1,4 @@
-update=6/3/2016 9:06:39 AM
+update=6/4/2016 12:58:40 PM
 version=1
 last_client=kicad
 [pcbnew]
@@ -23,8 +23,6 @@ ModuleOutlineThickness=0.150000000000
 [cvpcb]
 version=1
 NetIExt=net
-[general]
-version=1
 [eeschema]
 version=1
 LibDir=
@@ -61,3 +59,5 @@ LibName29=valves
 LibName30=esp07
 LibName31=74hc7541
 LibName32=74hc7014
+[general]
+version=1

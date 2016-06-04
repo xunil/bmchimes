@@ -243,16 +243,12 @@ Text GLabel 2550 2050 0    60   Input ~ 0
 GPIO12
 Text GLabel 2550 2350 0    60   Input ~ 0
 GPIO14
-Text GLabel 5450 3050 0    60   Input ~ 0
-12V
-Text GLabel 5450 2950 0    60   Input ~ 0
-3V3
-Text GLabel 5450 2850 0    60   Input ~ 0
-ADC
-Text GLabel 5450 3150 0    60   Input ~ 0
-GND
 Text GLabel 5450 3250 0    60   Input ~ 0
-GND
+12V
+Text GLabel 5450 3150 0    60   Input ~ 0
+3V3
+Text GLabel 5450 2950 0    60   Input ~ 0
+ADC
 Text GLabel 5450 3350 0    60   Input ~ 0
 GND
 Text GLabel 6600 2750 0    60   Input ~ 0
@@ -470,7 +466,7 @@ F 3 "" H 3600 2350 50  0000 C CNN
 	1    3600 2350
 	1    0    0    -1  
 $EndComp
-Text GLabel 5450 2350 0    60   Input ~ 0
+Text GLabel 5450 2550 0    60   Input ~ 0
 GPIO12_OUT
 $Comp
 L CONN_01X03 P6
@@ -507,12 +503,9 @@ Wire Wire Line
 	3600 2150 3600 2350
 Text GLabel 5450 2150 0    60   Input ~ 0
 GPIO2_IN
-Text GLabel 5450 2250 0    60   Input ~ 0
+Text GLabel 5450 2350 0    60   Input ~ 0
 GPIO2_OUT_ST
-NoConn ~ 5450 2550
-NoConn ~ 5450 2650
-NoConn ~ 5450 2750
-Text GLabel 5450 2450 0    60   Input ~ 0
+Text GLabel 5450 2750 0    60   Input ~ 0
 GPIO14_IN
 Text GLabel 5750 4900 0    60   Input ~ 0
 GPIO14
@@ -553,4 +546,72 @@ Text GLabel 2600 4250 0    60   Input ~ 0
 Wire Wire Line
 	4950 4600 5750 4600
 Connection ~ 5050 4600
+Text GLabel 5450 2850 0    60   Input ~ 0
+GND
+Text GLabel 5450 2650 0    60   Input ~ 0
+GND
+Text GLabel 5450 2450 0    60   Input ~ 0
+GND
+Text GLabel 5450 2250 0    60   Input ~ 0
+GND
+Text GLabel 5450 3050 0    60   Input ~ 0
+GND
+Text GLabel 9300 4200 0    60   Input ~ 0
+RESET
+Text GLabel 9300 4400 0    60   Input ~ 0
+12V
+Text GLabel 9300 4600 0    60   Input ~ 0
+3V3
+Text GLabel 9300 3800 0    60   Input ~ 0
+ADC
+Text GLabel 9300 4800 0    60   Input ~ 0
+GND
+Text GLabel 9300 3400 0    60   Input ~ 0
+GPIO12_OUT
+Text GLabel 9300 3000 0    60   Input ~ 0
+GPIO2_IN
+Text GLabel 9300 3200 0    60   Input ~ 0
+GPIO2_OUT_ST
+Text GLabel 9300 3600 0    60   Input ~ 0
+GPIO14_IN
+$Comp
+L CONN_01X10 P?
+U 1 1 5753592E
+P 9500 3450
+F 0 "P?" H 9500 4000 50  0000 C CNN
+F 1 "CONN_01X10" V 9600 3450 50  0000 C CNN
+F 2 "" H 9500 3450 50  0000 C CNN
+F 3 "" H 9500 3450 50  0000 C CNN
+	1    9500 3450
+	1    0    0    -1  
+$EndComp
+Text GLabel 9300 3100 0    60   Input ~ 0
+GND
+Text GLabel 9300 3300 0    60   Input ~ 0
+GND
+Text GLabel 9300 3500 0    60   Input ~ 0
+GND
+Text GLabel 9300 3700 0    60   Input ~ 0
+GND
+Text GLabel 9300 3900 0    60   Input ~ 0
+GND
+$Comp
+L CONN_01X08 P?
+U 1 1 57535C13
+P 9500 4550
+F 0 "P?" H 9500 5000 50  0000 C CNN
+F 1 "CONN_01X08" V 9600 4550 50  0000 C CNN
+F 2 "" H 9500 4550 50  0000 C CNN
+F 3 "" H 9500 4550 50  0000 C CNN
+	1    9500 4550
+	1    0    0    -1  
+$EndComp
+Text GLabel 9300 4300 0    60   Input ~ 0
+GND
+Text GLabel 9300 4500 0    60   Input ~ 0
+GND
+Text GLabel 9300 4700 0    60   Input ~ 0
+GND
+Text GLabel 9300 4900 0    60   Input ~ 0
+GND
 $EndSCHEMATC
