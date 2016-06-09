@@ -1,4 +1,4 @@
-update=6/4/2016 12:58:40 PM
+update=6/9/2016 10:39:12 AM
 version=1
 last_client=kicad
 [pcbnew]
@@ -59,5 +59,15 @@ LibName29=valves
 LibName30=esp07
 LibName31=74hc7541
 LibName32=74hc7014
+[schematic_editor]
+version=1
+PageLayoutDescrFile=
+PlotDirectoryName=D:/Dropbox/
+SubpartIdSeparator=0
+SubpartFirstId=65
+NetFmtName=
+SpiceForceRefPrefix=0
+SpiceUseNetNumbers=0
+LabSize=60
 [general]
 version=1
