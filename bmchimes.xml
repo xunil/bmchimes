@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <export version="D">
   <design>
-    <source>C:/Users/Robert/Documents/Arduino/bmchimes/bmchimes.sch</source>
-    <date>6/8/2016 4:34:01 PM</date>
+    <source>C:\Users\Robert\Documents\Arduino\bmchimes\bmchimes.sch</source>
+    <date>6/12/2016 10:04:15 AM</date>
     <tool>Eeschema 4.0.2-stable</tool>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
@@ -27,28 +27,28 @@
       <tstamp>574B4F8B</tstamp>
     </comp>
     <comp ref="R10">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574B508B</tstamp>
     </comp>
     <comp ref="R9">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574B5138</tstamp>
     </comp>
     <comp ref="R7">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574B53DF</tstamp>
     </comp>
     <comp ref="R8">
-      <value>R</value>
+      <value>665</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
@@ -62,14 +62,14 @@
       <tstamp>574B5615</tstamp>
     </comp>
     <comp ref="R12">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574B569C</tstamp>
     </comp>
     <comp ref="R11">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
@@ -83,7 +83,7 @@
       <tstamp>574B5A83</tstamp>
     </comp>
     <comp ref="C2">
-      <value>C</value>
+      <value>1u</value>
       <footprint>Capacitors_SMD:C_1206_HandSoldering</footprint>
       <libsource lib="device" part="C"/>
       <sheetpath names="/" tstamps="/"/>
@@ -104,28 +104,28 @@
       <tstamp>574C7B4F</tstamp>
     </comp>
     <comp ref="R4">
-      <value>R</value>
+      <value>20k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574CC56E</tstamp>
     </comp>
     <comp ref="R2">
-      <value>R</value>
+      <value>82k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574CC64C</tstamp>
     </comp>
     <comp ref="C1">
-      <value>C</value>
+      <value>1u</value>
       <footprint>Capacitors_SMD:C_1206_HandSoldering</footprint>
       <libsource lib="device" part="C"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>574CC6E6</tstamp>
     </comp>
     <comp ref="D1">
-      <value>D</value>
+      <value>1N4001</value>
       <footprint>Diodes_ThroughHole:Diode_DO-41_SOD81_Vertical_AnodeUp</footprint>
       <libsource lib="device" part="D"/>
       <sheetpath names="/" tstamps="/"/>
@@ -153,14 +153,14 @@
       <tstamp>57545DB0</tstamp>
     </comp>
     <comp ref="R3">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>5754653E</tstamp>
     </comp>
     <comp ref="R5">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
@@ -174,14 +174,14 @@
       <tstamp>57546EB1</tstamp>
     </comp>
     <comp ref="R6">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
       <tstamp>575475C4</tstamp>
     </comp>
     <comp ref="R1">
-      <value>R</value>
+      <value>10k</value>
       <footprint>Resistors_SMD:R_1206_HandSoldering</footprint>
       <libsource lib="device" part="R"/>
       <sheetpath names="/" tstamps="/"/>
@@ -439,11 +439,11 @@
     <library logical="conn">
       <uri>C:\Program Files\KiCad\share\kicad\library\conn.lib</uri>
     </library>
-    <library logical="esp07">
-      <uri>C:\Users\Robert\Documents\Arduino\bmchimes\esp07.lib</uri>
-    </library>
     <library logical="74hc7014">
       <uri>C:\Users\Robert\Documents\Arduino\bmchimes\74hc7014.lib</uri>
+    </library>
+    <library logical="esp07">
+      <uri>C:\Users\Robert\Documents\Arduino\bmchimes\esp07.lib</uri>
     </library>
   </libraries>
   <nets>
