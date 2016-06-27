@@ -22,8 +22,6 @@
 #define CHIME_PIN 12
 #define CHIME_STOP_SWITCH_PIN 14
 
-#define CHIME_TIMEOUT_MS 30000  // 30 seconds
-
 struct BMChimeConfig {
   String deviceDescription;
   String wiFiSSID;
@@ -36,6 +34,7 @@ struct BMChimeConfig {
   uint8_t stayAwakeMins;
   uint8_t chimeEveryN; 
   uint8_t chimeOffset; 
+  uint16_t chimeStopTimeout; 
 } config;
 
 char ssid[64];
@@ -323,9 +322,20 @@ void handleConfig() {
         Serial.println(server.arg(i));
         config.chimeEveryN = server.arg(i).toInt();
       } else if (server.argName(i) == "ChimeOffset") {
-        Serial.print("Setting chime offet to ");
+        Serial.print("Setting chime offset to ");
         Serial.println(server.arg(i));
         config.chimeOffset = server.arg(i).toInt();
+      } else if (server.argName(i) == "ChimeStopTimeout") {
+        if (server.arg(i).toInt() > 65535) {
+          Serial.print("Value ");
+          Serial.print(server.arg(i));
+          Serial.print(" larger than maximum 65535. Limiting to 65535.");
+          config.chimeStopTimeout = 65535;
+        } else {
+          Serial.print("Setting chime stop timeout to ");
+          Serial.println(server.arg(i));
+          config.chimeStopTimeout = server.arg(i).toInt();
+        }
       } else {
         Serial.print("Unknown configuration key ");
         Serial.println(server.argName(i));
@@ -384,6 +394,9 @@ void handleConfig() {
   message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
   message += config.chimeOffset;
   message += "\"/> seconds</label><br/>\n";
+  message += "<label>Chime stop timeout <input type=\"text\" name=\"ChimeStopTimeout\" value=\"";
+  message += config.chimeStopTimeout;
+  message += "\"/> milliseconds (max 65535)</label><br/>\n";
   message += "<input type=\"submit\" value=\"Save\"/>\n";
   message += "</form>\n";
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
@@ -557,6 +570,17 @@ void readConfig() {
       Serial.print("Setting chime offset to ");
       Serial.println(value);
       config.chimeOffset = value.toInt();
+    } else if (key == "ChimeStopTimeout") {
+      if (value.toInt() > 65535) {
+        Serial.print("Value ");
+        Serial.print(value);
+        Serial.print(" larger than maximum 65535. Limiting to 65535.");
+        config.chimeStopTimeout = 65535;
+      } else {
+        Serial.print("Setting chime stop timeout to ");
+        Serial.println(value);
+        config.chimeStopTimeout = value.toInt();
+      }
     } else {
       Serial.print("Unknown configuration key ");
       Serial.println(key);
@@ -632,6 +656,8 @@ void writeConfig() {
   f.println(config.chimeEveryN);
   f.print("ChimeOffset=");
   f.println(config.chimeOffset);
+  f.print("ChimeStopTimeout=");
+  f.println(config.chimeStopTimeout);
   f.close();
 }
 
@@ -910,7 +936,7 @@ void loop(void) {
   // Check time every loop, turn off chime GPIO if timeout
   if (chiming) {
     // Check for stop conditions (timeout, stop switch)
-    if ((millis() - chimeStartMillis > CHIME_TIMEOUT_MS) || chimeStopSwitchFlag) {
+    if ((millis() - chimeStartMillis > config.chimeStopTimeout) || chimeStopSwitchFlag) {
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
         Serial.println("Chime stop switch activated, turning off chime motor");
