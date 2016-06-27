@@ -25,6 +25,9 @@
 const int statsInterval = 1;
 const int statsLinesPerDay = 24 * (60 / statsInterval);
 
+const int statsInterval = 1;
+const int statsLinesPerDay = 24 * (60 / statsInterval);
+
 struct BMChimeConfig {
   String deviceDescription;
   String wiFiSSID;
