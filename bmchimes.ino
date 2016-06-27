@@ -25,9 +25,6 @@
 const int statsInterval = 1;
 const int statsLinesPerDay = 24 * (60 / statsInterval);
 
-const int statsInterval = 1;
-const int statsLinesPerDay = 24 * (60 / statsInterval);
-
 struct BMChimeConfig {
   String deviceDescription;
   String wiFiSSID;
@@ -828,6 +825,10 @@ void calculateSleepAndChimeTiming() {
 }
 
 void setRtcAlarms() {
+  // Chime alarm is second-sensitive, has to be an exact alarm
+  // Sleep alarm isn't, can just run on the 00 second of a given minute
+  // Other less-critical tasks such as stats collection are also seconds-insensitive,
+  // can run on a once-a-minute basis.
   String nowString;
   getRtcDateTimeString(nowString);
   String sleepAlarmDateTimeString;
@@ -838,53 +839,37 @@ void setRtcAlarms() {
   Serial.print("Time is now ");
   Serial.println(nowString);
 
-  if (config.sleepEnabled) {
-    Serial.println("Setting RTC sleep alarm");
-    
-    Serial.print("sleepDuration = ");
-    Serial.println(sleepDuration);
-    Serial.print("Sleep now scheduled for ");
-    Serial.println(sleepAlarmDateTimeString);
-    Serial.flush();
-
-    // Alarm one is the sleep alarm
-    DS3231AlarmOne alarmOne = DS3231AlarmOne(
-      0, // dayOf; irrelevant with MinutesSecondsMatch
-      0, // hour; irrelevant with MinutesSecondsMatch
-      sleepAlarmDateTime.Minute(),
-      sleepAlarmDateTime.Second(),
-      DS3231AlarmOneControl_MinutesSecondsMatch
-    );
-    
-    Rtc.SetAlarmOne(alarmOne);
-  }
+  // Alarm one is the chime alarm
+  DS3231AlarmOne alarmOne = DS3231AlarmOne(
+    0, // dayOf; irrelevant with MinutesSecondsMatch
+    chimeAlarmDateTime.Hour(),
+    chimeAlarmDateTime.Minute(),
+    chimeAlarmDateTime.Second(),
+    DS3231AlarmOneControl_HoursMinutesSecondsMatch 
+  );
   
+  Rtc.SetAlarmOne(alarmOne);
   Serial.print("Chime scheduled for ");
   Serial.println(chimeAlarmDateTimeString);
   Serial.flush();
 
-  // Alarm two is the chime alarm
+  // Alarm two is the once-per-minute alarm
   DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(
-    0, // dayOf; irrelevant with HoursMinutesMatch
-    chimeAlarmDateTime.Hour(),
-    chimeAlarmDateTime.Minute(),
-    DS3231AlarmTwoControl_HoursMinutesMatch
-  );
-  
-  Rtc.SetAlarmTwo(alarmTwo);
-  Rtc.LatchAlarmsTriggeredFlags();
-  attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
-}
-
-void setRtcWakeupEveryMinuteAlarm() {
-  DS3231AlarmTwo alarm = DS3231AlarmTwo(
-    0, // dayOf; irrelevant with MinutesSecondsMatch
-    0, // hour; irrelevant with MinutesSecondsMatch
+    0,
+    0,
     0,
     DS3231AlarmTwoControl_OncePerMinute
   );
   
-  Rtc.SetAlarmTwo(alarm);
+  Rtc.SetAlarmTwo(alarmTwo);
+  if (config.sleepEnabled) {
+    Serial.print("sleepDuration = ");
+    Serial.println(sleepDuration);
+    Serial.print("Sleep scheduled for ");
+    Serial.println(sleepAlarmDateTimeString);
+    Serial.flush();
+  }
+  
   Rtc.LatchAlarmsTriggeredFlags();
   attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
 }
@@ -949,8 +934,7 @@ void setup(void) {
   rtcSetup();
   clearRtcAlarms();
   calculateSleepAndChimeTiming();
-  //setRtcAlarms();
-  setRtcWakeupEveryMinuteAlarm();
+  setRtcAlarms();
   chimeSetup();
   startWebServer();
 }
@@ -962,25 +946,8 @@ void loop(void) {
   server.handleClient();
   if (alarmFired(flag)) {
     RtcDateTime now = Rtc.GetDateTime();
-    if (config.sleepEnabled
-          && sleepAlarmDateTime.Hour() == now.Hour()
-          && sleepAlarmDateTime.Minute() == now.Minute()
-          && sleepAlarmDateTime.Second() == now.Second()) {
-      // sleep now
-      dateTimeStringFromRtcDateTime(now, nowString);
-      Serial.print("Time is now ");
-      Serial.println(nowString);
-      Serial.print("Sleeping for ");
-      Serial.print(sleepDuration);
-      Serial.println(" seconds");
-      // deepSleep expects a number in microseconds
-      ESP.deepSleep(sleepDuration * 1e6);
-    }
-
-    if (chimeAlarmDateTime.Hour() == now.Hour()
-          && chimeAlarmDateTime.Minute() == now.Minute()
-          && chimeAlarmDateTime.Second() == now.Second()) {
-      // Time to Chime!
+    if (flag & DS3231AlarmFlag_Alarm1) {
+      // Chime alarm fired
       dateTimeStringFromRtcDateTime(now, nowString);
       Serial.print("Time is now ");
       Serial.println(nowString);
@@ -992,10 +959,28 @@ void loop(void) {
       // Trigger chime GPIO
       chimeMotorOn();
     }
-    
-    // Collect statistics
-    if (now.Minute() % statsInterval == 0) {
-      collectStats();
+
+    if (flag & DS3231AlarmFlag_Alarm2) {
+      // Once-per-minute alarm fired
+      if (config.sleepEnabled
+            && sleepAlarmDateTime.Hour() == now.Hour()
+            && sleepAlarmDateTime.Minute() == now.Minute()
+            && sleepAlarmDateTime.Second() == now.Second()) {
+        // sleep now
+        dateTimeStringFromRtcDateTime(now, nowString);
+        Serial.print("Time is now ");
+        Serial.println(nowString);
+        Serial.print("Sleeping for ");
+        Serial.print(sleepDuration);
+        Serial.println(" seconds");
+        // deepSleep expects a number in microseconds
+        ESP.deepSleep(sleepDuration * 1e6);
+      }
+
+      // Collect statistics
+      if (now.Minute() % statsInterval == 0) {
+        collectStats();
+      }
     }
   }
 
