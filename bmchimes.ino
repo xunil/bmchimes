@@ -22,6 +22,9 @@
 #define CHIME_PIN 12
 #define CHIME_STOP_SWITCH_PIN 14
 
+const int statsInterval = 1;
+const int statsLinesPerDay = 24 * (60 / statsInterval);
+
 struct BMChimeConfig {
   String deviceDescription;
   String wiFiSSID;
@@ -45,6 +48,9 @@ RtcDS3231 Rtc;
 ESP8266WebServer server(80);
 
 uint16_t sleepDuration = 0;
+RtcDateTime wakeAlarmDateTime;
+RtcDateTime sleepAlarmDateTime;
+RtcDateTime chimeAlarmDateTime;
 uint32_t chimeStartMillis = 0;
 
 bool chiming = false;
@@ -420,18 +426,6 @@ void handleNotFound(){
   server.send(404, "text/plain", message);
 }
 
-// Setup functions
-void setupSPIFFS() {
-  Serial.println("Starting SPIFFS");
-  if (SPIFFS.begin()) {
-    Serial.println("SPIFFS initialized");
-  } else {
-    Serial.println("SPIFFS initialization failed!");
-    return;
-  }
-  Serial.flush();
-}
-
 // Debug function, not used for now
 void dumpSPIFFSInfo() {
   FSInfo fs_info;
@@ -458,6 +452,18 @@ void dumpSPIFFSInfo() {
   while (dir.next()) {
     Serial.print("  ");
     Serial.println(dir.fileName());
+  }
+  Serial.flush();
+}
+
+// Setup functions
+void setupSPIFFS() {
+  Serial.println("Starting SPIFFS");
+  if (SPIFFS.begin()) {
+    Serial.println("SPIFFS initialized");
+  } else {
+    Serial.println("SPIFFS initialization failed!");
+    return;
   }
   Serial.flush();
 }
@@ -661,6 +667,58 @@ void writeConfig() {
   f.close();
 }
 
+float batteryVoltage() {
+  const float R7 = 10000.0;
+  const float R8 = 665.0;
+  uint16_t adcReading = analogRead(A0);
+  // Vin = Vout / (R8/(R7+R8))
+  float Vout = adcReading / 1024.0;
+  float Vin = Vout / (R8/(R7+R8));
+  
+  return Vin;
+}
+
+void collectStats() {
+  SPIFFS.remove("/statistics.csv.old");
+  SPIFFS.rename("/statistics.csv", "/statistics.csv.old");
+  File oldStats = SPIFFS.open("/statistics.csv.old", "r");
+  if (!oldStats) {
+      Serial.println("collectStats: file open failed while opening /statistics.csv.old");
+      return;
+  }
+  File stats = SPIFFS.open("/statistics.csv", "w");
+  if (!stats) {
+      Serial.println("collectStats: file open failed while opening /statistics.csv");
+      return;
+  }
+
+  // Stats line consists of:
+  // time,battery voltage,rtc temp
+  // time will be in Epoch32
+  // battery voltage will be direct ADC reading
+  // rtc temp will be a float
+  // Example:
+  // 1466529391,13.80,55.75
+  String csvLine;
+  int lines = 1;
+  RtcDateTime now = Rtc.GetDateTime();
+  csvLine = String(now.Epoch32Time());
+  csvLine += ",";
+  csvLine += String(batteryVoltage(), 2);
+  csvLine += ",";
+  RtcTemperature dieTemp = Rtc.GetTemperature();
+  csvLine += String(dieTemp.AsFloat(), 2);
+  stats.println(csvLine);
+
+  while (lines < statsLinesPerDay && oldStats.available()) {
+    csvLine = oldStats.readStringUntil('\n');
+    stats.println(csvLine);
+    lines++;
+  }
+  oldStats.close();
+  stats.close();
+}
+
 void syncNTPTime() {
   Serial.println("Fetching time from NTP servers");
   // Pacific time zone hard coded
@@ -740,10 +798,10 @@ void rtcSetup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
-void setRtcAlarms() {
+void calculateSleepAndChimeTiming() {
   uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
-  uint16_t secondsTilNextChime = secondsTilNextN(config.chimeEveryN);
+  uint16_t secondsTilNextChime = secondsTilNextN(config.chimeEveryN) + config.chimeOffset;
   RtcDateTime now = Rtc.GetDateTime();
   time_t nowTime = now.Epoch32Time();
   time_t wakeTime = nowTime + secondsTilNextWake;
@@ -752,12 +810,21 @@ void setRtcAlarms() {
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + (config.wakeEveryN * 60);
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
   time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
-  // sleepDuration is global
-  sleepDuration = wakeTimeAfterNext - nextSleepTime;
-  RtcDateTime wakeAlarmDateTime = RtcDateTime(wakeTime);
-  RtcDateTime sleepAlarmDateTime = RtcDateTime(nextSleepTime);
-  RtcDateTime chimeAlarmDateTime = RtcDateTime(chimeTime);
 
+  // set globals
+  sleepDuration = wakeTimeAfterNext - nextSleepTime;
+  wakeAlarmDateTime = RtcDateTime(wakeTime);
+  sleepAlarmDateTime = RtcDateTime(nextSleepTime);
+  chimeAlarmDateTime = RtcDateTime(chimeTime);
+
+  // Determine if the next chime will happen between the next sleep and the next wake
+  if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
+    // Chime will happen while we are asleep!  Skip the next sleep.
+    sleepAlarmDateTime = RtcDateTime(sleepTimeAfterNext);
+  }
+}
+
+void setRtcAlarms() {
   String nowString;
   getRtcDateTimeString(nowString);
   String sleepAlarmDateTimeString;
@@ -771,8 +838,6 @@ void setRtcAlarms() {
   if (config.sleepEnabled) {
     Serial.println("Setting RTC sleep alarm");
     
-    Serial.print("secondsToStayAwake = ");
-    Serial.println(secondsToStayAwake);
     Serial.print("sleepDuration = ");
     Serial.println(sleepDuration);
     Serial.print("Sleep now scheduled for ");
@@ -794,17 +859,6 @@ void setRtcAlarms() {
   Serial.print("Chime scheduled for ");
   Serial.println(chimeAlarmDateTimeString);
   Serial.flush();
-
-  // Determine if the next chime will happen between the next sleep and the next wake
-  if (config.sleepEnabled && chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
-    // Chime will happen while we are asleep!  Skip the next sleep.
-    sleepAlarmDateTime = RtcDateTime(sleepTimeAfterNext);
-    Serial.println("Chime scheduled to occur during sleep, rescheduling sleep to avoid conflict");
-    Serial.print("Sleep was scheduled for ");
-    Serial.println(sleepAlarmDateTimeString);
-    dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
-    
-  }
 
   // Alarm two is the chime alarm
   DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(
@@ -891,9 +945,9 @@ void setup(void) {
 
   rtcSetup();
   clearRtcAlarms();
-  setRtcAlarms();
-  // Used for testing.
-  //setRtcWakeupEveryMinuteAlarm();
+  calculateSleepAndChimeTiming();
+  //setRtcAlarms();
+  setRtcWakeupEveryMinuteAlarm();
   chimeSetup();
   startWebServer();
 }
@@ -904,25 +958,29 @@ void loop(void) {
 
   server.handleClient();
   if (alarmFired(flag)) {
-    getRtcDateTimeString(nowString);
-    Serial.print("Time is now ");
-    Serial.println(nowString);
-    if (flag & DS3231AlarmFlag_Alarm1) {
-      Serial.println("Sleep alarm (alarm one) fired");
-      if (config.sleepEnabled) {
-        Serial.print("Sleeping for ");
-        Serial.print(sleepDuration);
-        Serial.println(" seconds");
-        // deepSleep expects a number in microseconds
-        ESP.deepSleep(sleepDuration * 1e6);
-      } else {
-        Serial.println("Sleep disabled in configuration, skipping sleep!");
-      }
+    RtcDateTime now = Rtc.GetDateTime();
+    if (config.sleepEnabled
+          && sleepAlarmDateTime.Hour() == now.Hour()
+          && sleepAlarmDateTime.Minute() == now.Minute()
+          && sleepAlarmDateTime.Second() == now.Second()) {
+      // sleep now
+      dateTimeStringFromRtcDateTime(now, nowString);
+      Serial.print("Time is now ");
+      Serial.println(nowString);
+      Serial.print("Sleeping for ");
+      Serial.print(sleepDuration);
+      Serial.println(" seconds");
+      // deepSleep expects a number in microseconds
+      ESP.deepSleep(sleepDuration * 1e6);
     }
 
-    if (flag & DS3231AlarmFlag_Alarm2) {
-      Serial.println("Chime alarm (alarm two) fired");
+    if (chimeAlarmDateTime.Hour() == now.Hour()
+          && chimeAlarmDateTime.Minute() == now.Minute()
+          && chimeAlarmDateTime.Second() == now.Second()) {
       // Time to Chime!
+      dateTimeStringFromRtcDateTime(now, nowString);
+      Serial.print("Time is now ");
+      Serial.println(nowString);
       Serial.println("Chiming!");
       // Set a flag indicating chiming has begun
       chiming = true;
@@ -930,6 +988,11 @@ void loop(void) {
       chimeStartMillis = millis();
       // Trigger chime GPIO
       chimeMotorOn();
+    }
+    
+    // Collect statistics
+    if (now.Minute() % statsInterval == 0) {
+      collectStats();
     }
   }
 
@@ -946,7 +1009,7 @@ void loop(void) {
       chimeMotorOff();
       chiming = false;
       // Schedule next chime
-      setRtcAlarms();
+      calculateSleepAndChimeTiming();
     }
   }
 }
