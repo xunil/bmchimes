@@ -154,6 +154,7 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
+  Serial.println("Chiming!");
   // Set a flag indicating chiming has begun
   chiming = true;
   // Store time chiming began
@@ -354,7 +355,7 @@ void handleConfig() {
         if (server.arg(i).toInt() > 65535) {
           Serial.print("Value ");
           Serial.print(server.arg(i));
-          Serial.print(" larger than maximum 65535. Limiting to 65535.");
+          Serial.println(" larger than maximum 65535. Limiting to 65535.");
           config.chimeStopTimeout = 65535;
         } else {
           Serial.print("Setting chime stop timeout to ");
@@ -552,23 +553,29 @@ void setupSPIFFS() {
 
 void setConfigDefaults() {
   byte mac[6];
+  String macString;
 
   // Don't like doing this here, but this should only
   // be called during initialization anyway...
   WiFi.mode(WIFI_STA);
   WiFi.macAddress(mac);
-  config.deviceDescription = "Unconfigured";
-  config.deviceDescription += String(mac[1], HEX);
-  config.deviceDescription += String(mac[0], HEX);
+  config.deviceDescription = "Unconfigured ";
+  macString = String(mac[1], HEX);
+  macString.toUpperCase();
+  config.deviceDescription += macString;
+  config.deviceDescription += ":";
+  macString = String(mac[0], HEX);
+  macString.toUpperCase();
+  config.deviceDescription += macString;
   config.wiFiSSID = config.deviceDescription;
   config.wiFiPassword = "";
   config.wiFiMode = WIFI_AP;
   config.sleepEnabled = false;
   config.wakeEveryN = 1;
   config.stayAwakeMins = 1;
-  config.chimeEveryN = 5;
+  config.chimeEveryN = 2;
   config.chimeOffset = 0;
-  config.chimeStopTimeout = 30000;
+  config.chimeStopTimeout = 65535;
 }
 
 bool readConfig() {
@@ -886,6 +893,8 @@ void connectToWiFi() {
       Serial.println(" network.  Giving up.");
     }
   } else if (config.wiFiMode == WIFI_AP) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_AP);
     Serial.print("Starting WiFi network named ");
     Serial.print(config.wiFiSSID);
     Serial.print("...");
@@ -1080,11 +1089,15 @@ void loop(void) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
       // Chime alarm fired
+      Serial.println("Chime alarm fired!");
       dateTimeStringFromRtcDateTime(now, nowString);
       Serial.print("Time is now ");
       Serial.println(nowString);
-      Serial.println("Chiming!");
-      startChiming();
+      if (!chiming) {
+        startChiming();
+      } else {
+        Serial.println("Chiming already in progress, skipping scheduled chime.");
+      }
     }
 
     if (flag & DS3231AlarmFlag_Alarm2) {
