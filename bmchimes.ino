@@ -78,6 +78,10 @@ void printStringAsHexDump(String str) {
     Serial.print(buf[i], HEX);
     Serial.print(" ");
   }
+}
+
+void printlnStringAsHexDump(String str) {
+  printStringAsHexDump(str);
   Serial.println("");
 }
 
@@ -149,6 +153,19 @@ void chimeMotorOff() {
   digitalWrite(CHIME_PIN, LOW);
 }
 
+void startChiming() {
+  // Set a flag indicating chiming has begun
+  chiming = true;
+  // Store time chiming began
+  chimeStartMillis = millis();
+  // Trigger chime GPIO
+  chimeMotorOn();
+}
+
+void stopChiming() {
+  chimeMotorOff();
+  chiming = false;
+}
 
 // Web server handler functions
 
@@ -177,7 +194,9 @@ void handleRoot() {
   }
   message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
   message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
+  message += "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
   message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
+  message += "<form action=\"/chimenow\" method=\"get\"><input type=\"submit\" value=\"Chime Now\"/></form>\n";
   message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
   message += "</body>\n</html>\n";
   server.send(200, "text/html", message);
@@ -411,6 +430,69 @@ void handleConfig() {
   server.send(200, "text/html", message);
 }
 
+void handleStats() {
+  File stats = SPIFFS.open("/statistics.csv", "r");
+  if (!stats) {
+      Serial.println("collectStats: file open failed while opening /statistics.csv");
+      return;
+  }
+
+  String message = "<html>\n<head>\n\t<title>Statistics</title>\n</head>\n<body>\n";
+  message += "<table>";
+  message += "<tr>";
+  message += "<th>Date</th><th>Battery Voltage</th><th>RTC Temp</th>";
+  message += "</tr>";
+  while (stats.available()) {
+    // time,battery voltage,rtc temp
+    String token = stats.readStringUntil(',');
+    Serial.print("handleStats: token=");
+    Serial.println(token);
+    RtcDateTime statDateTime = RtcDateTime();
+    statDateTime.InitWithEpoch32Time(token.toInt());
+    token = stats.readStringUntil(',');
+    Serial.print("handleStats: token=");
+    Serial.println(token);
+    float batteryVoltage = token.toFloat();
+    token = stats.readStringUntil('\n');
+    Serial.print("handleStats: token=");
+    Serial.println(token);
+    float rtcTemp = token.toFloat();
+
+    message += "<tr>";
+    message += "<td>";
+    String statDateTimeString;
+    dateTimeStringFromRtcDateTime(statDateTime, statDateTimeString);
+    message += statDateTimeString;
+    message += "</td>";
+
+    message += "<td>";
+    message += batteryVoltage;
+    message += "</td>";
+
+    message += "<td>";
+    message += rtcTemp;
+    message += "</td>";
+    message += "</tr>";
+  }
+  
+  message += "</table>";
+  
+  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
+  message += "</body>\n</html>\n";
+  
+  server.send(200, "text/html", message);
+}
+
+void handleChimeNow() {
+  String message = "<html>\n<head>\n\t<title>Chime Now</title>\n</head>\n<body>\n";
+  message += "<h1>Chiming!</h1>";
+  message += "</body>\n</html>\n";
+  
+  server.sendHeader("Refresh", "5; url=/");
+  server.send(200, "text/html", message);
+  startChiming();
+}
+
 void handleNotFound(){
   String message = "File Not Found\n\n";
   message += "URI: ";
@@ -468,12 +550,33 @@ void setupSPIFFS() {
   Serial.flush();
 }
 
-void readConfig() {
+void setConfigDefaults() {
+  byte mac[6];
+
+  // Don't like doing this here, but this should only
+  // be called during initialization anyway...
+  WiFi.mode(WIFI_STA);
+  WiFi.macAddress(mac);
+  config.deviceDescription = "Unconfigured";
+  config.deviceDescription += String(mac[1], HEX);
+  config.deviceDescription += String(mac[0], HEX);
+  config.wiFiSSID = config.deviceDescription;
+  config.wiFiPassword = "";
+  config.wiFiMode = WIFI_AP;
+  config.sleepEnabled = false;
+  config.wakeEveryN = 1;
+  config.stayAwakeMins = 1;
+  config.chimeEveryN = 5;
+  config.chimeOffset = 0;
+  config.chimeStopTimeout = 30000;
+}
+
+bool readConfig() {
   Serial.println("Opening config file");
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
       Serial.println("readConfig: file open failed");
-      return;
+      return false;
   }
   Serial.flush();
   Serial.println("Beginning read of config file");
@@ -510,10 +613,16 @@ void readConfig() {
     } else if (key == "WiFiSSID") {
       Serial.print("Setting WiFi SSID ");
       Serial.println(value);
+      Serial.print(" (");
+      printStringAsHexDump(value);
+      Serial.println(")");
       config.wiFiSSID = value;
     } else if (key == "WiFiPassword") {
       Serial.print("Setting WiFi password ");
       Serial.println(value);
+      Serial.print(" (");
+      printStringAsHexDump(value);
+      Serial.println(")");
       config.wiFiPassword = value;
     } else if (key == "WiFiMode") {
       // Either Station or AP
@@ -596,6 +705,7 @@ void readConfig() {
   Serial.println("Closing config file");
   f.close();
   Serial.println("Config read complete");
+  return true;
 }
 
 void writeConfig() {
@@ -684,7 +794,7 @@ void collectStats() {
   File oldStats = SPIFFS.open("/statistics.csv.old", "r");
   if (!oldStats) {
       Serial.println("collectStats: file open failed while opening /statistics.csv.old");
-      return;
+      // Probably our first run. OK to keep going.
   }
   File stats = SPIFFS.open("/statistics.csv", "w");
   if (!stats) {
@@ -710,12 +820,15 @@ void collectStats() {
   csvLine += String(dieTemp.AsFloat(), 2);
   stats.println(csvLine);
 
-  while (lines < statsLinesPerDay && oldStats.available()) {
-    csvLine = oldStats.readStringUntil('\n');
-    stats.println(csvLine);
-    lines++;
+  if (oldStats) {
+    // If there are any old statistics to copy to the new file
+    while (oldStats.available() && lines < statsLinesPerDay) {
+      csvLine = oldStats.readStringUntil('\n');
+      stats.println(csvLine);
+      lines++;
+    }
+    oldStats.close();
   }
-  oldStats.close();
   stats.close();
 }
 
@@ -741,32 +854,46 @@ void syncNTPTime() {
 void connectToWiFi() {
   config.wiFiSSID.toCharArray(ssid, 64);
   config.wiFiPassword.toCharArray(password, 64);
-  WiFi.begin(ssid, password);
-  Serial.println("");
-
-  // Wait up to 1 minute for connection
-  uint8_t attempts = 0; 
-  while (attempts <= 120 && WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
+  if (config.wiFiPassword.length() > 0) {
+    WiFi.begin(ssid, password);
+  } else {
+    WiFi.begin(ssid);
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("");
-    Serial.print("Connected to ");
-    Serial.println(config.wiFiSSID);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-
-    if (MDNS.begin("esp8266")) {
-      Serial.println("MDNS responder started");
+  if (config.wiFiMode == WIFI_STA) {
+    // Wait up to 1 minute for connection
+    uint8_t attempts = 0; 
+    while (attempts <= 120 && WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+      attempts++;
     }
-  } else {
-    Serial.println("");
-    Serial.print("Unable to connect to ");
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("");
+      Serial.print("Connected to ");
+      Serial.println(config.wiFiSSID);
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+
+      if (MDNS.begin("esp8266")) {
+        Serial.println("MDNS responder started");
+      }
+    } else {
+      Serial.println("");
+      Serial.print("Unable to connect to ");
+      Serial.print(config.wiFiSSID);
+      Serial.println(" network.  Giving up.");
+    }
+  } else if (config.wiFiMode == WIFI_AP) {
+    Serial.print("Starting WiFi network named ");
     Serial.print(config.wiFiSSID);
-    Serial.println(" network.  Giving up.");
+    Serial.print("...");
+    Serial.flush();
+    WiFi.softAP(ssid);
+    Serial.println("done.");
+    Serial.print("My IP address is ");
+    Serial.println(WiFi.softAPIP());
   }
 }
 
@@ -909,6 +1036,8 @@ void startWebServer() {
   server.on("/time", handleTime);
   server.on("/temp", handleTemp);
   server.on("/config", handleConfig);
+  server.on("/stats", handleStats);
+  server.on("/chimenow", handleChimeNow);
   server.onNotFound(handleNotFound);
 
   /***
@@ -926,10 +1055,13 @@ void startWebServer() {
 void setup(void) {
   basicSetup();
   setupSPIFFS();
-  readConfig();
-  if (config.connectWiFiAtReset) {
-    connectToWiFi();
+  if (!readConfig()) {
+    Serial.println("Config read failed, setting defaults");
+    setConfigDefaults();
+    writeConfig();
+    readConfig();
   }
+  connectToWiFi();
 
   rtcSetup();
   clearRtcAlarms();
@@ -952,12 +1084,7 @@ void loop(void) {
       Serial.print("Time is now ");
       Serial.println(nowString);
       Serial.println("Chiming!");
-      // Set a flag indicating chiming has begun
-      chiming = true;
-      // Store time chiming began
-      chimeStartMillis = millis();
-      // Trigger chime GPIO
-      chimeMotorOn();
+      startChiming();
     }
 
     if (flag & DS3231AlarmFlag_Alarm2) {
@@ -994,10 +1121,10 @@ void loop(void) {
       } else {
         Serial.println("Timeout waiting for chime stop switch activation!");
       }
-      chimeMotorOff();
-      chiming = false;
+      stopChiming();
       // Schedule next chime
       calculateSleepAndChimeTiming();
+      setRtcAlarms();
     }
   }
 }
