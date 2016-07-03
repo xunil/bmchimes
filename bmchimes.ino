@@ -446,17 +446,11 @@ void handleStats() {
   while (stats.available()) {
     // time,battery voltage,rtc temp
     String token = stats.readStringUntil(',');
-    Serial.print("handleStats: token=");
-    Serial.println(token);
     RtcDateTime statDateTime = RtcDateTime();
     statDateTime.InitWithEpoch32Time(token.toInt());
     token = stats.readStringUntil(',');
-    Serial.print("handleStats: token=");
-    Serial.println(token);
     float batteryVoltage = token.toFloat();
     token = stats.readStringUntil('\n');
-    Serial.print("handleStats: token=");
-    Serial.println(token);
     float rtcTemp = token.toFloat();
 
     message += "<tr>";
@@ -481,6 +475,7 @@ void handleStats() {
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
   
+  server.sendHeader("Refresh", "60; url=/stats");
   server.send(200, "text/html", message);
 }
 
