@@ -172,10 +172,14 @@ void stopChiming() {
 
 void handleRoot() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
-  float dieTempF = (dieTemp.AsFloat()*(9/5))+32;
+  float dieTempF = (dieTemp.AsFloat()*(9.0/5.0))+32.0;
 
   String rtcDateTimeStr;
   getRtcDateTimeString(rtcDateTimeStr);
+  String sleepAlarmDateTimeString;
+  String chimeAlarmDateTimeString;
+  dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
+  dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
   String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
   message += "<h1>";
@@ -185,9 +189,15 @@ void handleRoot() {
   message += "RTC date and time ";
   message += rtcDateTimeStr;
   message += "<br/>\n";
-  message += "Die temperature ";
+  message += "RTC die temperature ";
   message += dieTempF;
   message += "&deg;F<br/>\n";
+  message += "Next sleep scheduled at ";
+  message += sleepAlarmDateTimeString;
+  message += "<br/>\n";
+  message += "Next chime scheduled at ";
+  message += chimeAlarmDateTimeString;
+  message += "<br/>\n";
   if (WiFi.status() == WL_CONNECTED) {
     message += "Connected to WiFi network ";
     message += WiFi.SSID();
@@ -225,7 +235,7 @@ void handleReset() {
 
 void handleTemp() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
-  float dieTempF = dieTemp.AsFloat()*(9/5)+32;
+  float dieTempF = (dieTemp.AsFloat()*(9.0/5.0))+32.0;
   
   String message = "<html>\n<head>\n\t<title>Temperature</title>\n</head>\n<body>\n";
   message += "<h1>Die temperature ";
@@ -245,6 +255,9 @@ void handleTime() {
       if (server.argName(i) == "writeNTP") {
         syncNTPTime();
         writeNtpTimeToRtc();
+        // Schedule next chime
+        calculateSleepAndChimeTiming();
+        setRtcAlarms();
         message += "<h2>Wrote NTP time to RTC</h2>\n";
       }
     }
@@ -432,46 +445,59 @@ void handleConfig() {
 }
 
 void handleStats() {
-  File stats = SPIFFS.open("/statistics.csv", "r");
-  if (!stats) {
-      Serial.println("collectStats: file open failed while opening /statistics.csv");
-      return;
-  }
-
   String message = "<html>\n<head>\n\t<title>Statistics</title>\n</head>\n<body>\n";
-  message += "<table>";
-  message += "<tr>";
-  message += "<th>Date</th><th>Battery Voltage</th><th>RTC Temp</th>";
-  message += "</tr>";
-  while (stats.available()) {
-    // time,battery voltage,rtc temp
-    String token = stats.readStringUntil(',');
-    RtcDateTime statDateTime = RtcDateTime();
-    statDateTime.InitWithEpoch32Time(token.toInt());
-    token = stats.readStringUntil(',');
-    float batteryVoltage = token.toFloat();
-    token = stats.readStringUntil('\n');
-    float rtcTemp = token.toFloat();
+  if (server.method() == HTTP_POST) {
+    for (uint8_t i = 0; i < server.args(); i++) {
+      if (server.argName(i) == "delete" && server.arg(i) == "true") {
+        SPIFFS.remove("/statistics.csv");
+        message += "<h2>Cleared statistics.</h2>\n";
+      }
+    }
+  } else {
+    File stats = SPIFFS.open("/statistics.csv", "r");
+    if (!stats) {
+        Serial.println("collectStats: file open failed while opening /statistics.csv");
+        message += "<h2>No statistics collected yet.</h2>\n";
+    } else {
+      message += "<table border=1 cellpadding=1 cellspacing=0>";
+      message += "<tr>";
+      message += "<th>Date</th><th>Battery Voltage</th><th>RTC Temp (&deg;F)</th>";
+      message += "</tr>";
+      while (stats.available()) {
+        // time,battery voltage,rtc temp
+        String token = stats.readStringUntil(',');
+        RtcDateTime statDateTime = RtcDateTime();
+        statDateTime.InitWithEpoch32Time(token.toInt());
+        token = stats.readStringUntil(',');
+        float batteryVoltage = token.toFloat();
+        token = stats.readStringUntil('\n');
+        float rtcTemp = token.toFloat();
 
-    message += "<tr>";
-    message += "<td>";
-    String statDateTimeString;
-    dateTimeStringFromRtcDateTime(statDateTime, statDateTimeString);
-    message += statDateTimeString;
-    message += "</td>";
+        message += "<tr>";
+        message += "<td>";
+        String statDateTimeString;
+        dateTimeStringFromRtcDateTime(statDateTime, statDateTimeString);
+        message += statDateTimeString;
+        message += "</td>";
 
-    message += "<td>";
-    message += batteryVoltage;
-    message += "</td>";
+        message += "<td>";
+        message += batteryVoltage;
+        message += "</td>";
 
-    message += "<td>";
-    message += rtcTemp;
-    message += "</td>";
-    message += "</tr>";
+        message += "<td>";
+        message += rtcTemp;
+        message += "</td>";
+        message += "</tr>";
+      }
+      
+      message += "</table>";
+    }
   }
   
-  message += "</table>";
-  
+  message += "<form action=\"/stats\" method=\"post\">\n";
+  message += "<input type=\"hidden\" name=\"delete\" value=\"true\"/>\n";
+  message += "<input type=\"submit\" value=\"Clear Statistics\"/>\n";
+  message += "</form>\n";
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
   message += "</body>\n</html>\n";
   
@@ -819,7 +845,8 @@ void collectStats() {
   csvLine += String(batteryVoltage(), 2);
   csvLine += ",";
   RtcTemperature dieTemp = Rtc.GetTemperature();
-  csvLine += String(dieTemp.AsFloat(), 2);
+  float dieTempF = (dieTemp.AsFloat() * (9.0/5.0)) + 32.0;
+  csvLine += String(dieTempF, 2);
   stats.println(csvLine);
 
   if (oldStats) {
