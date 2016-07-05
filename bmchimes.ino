@@ -66,8 +66,10 @@ void alarmISR() {
 void chimeStopSwitchISR() {
   if (digitalRead(CHIME_STOP_SWITCH_PIN) == HIGH) {
     chimeStopSwitchFlag = false;
+    digitalWrite(led, HIGH);
   } else {
     chimeStopSwitchFlag = true;
+    digitalWrite(led, LOW);
   }
 }
 
@@ -1046,6 +1048,7 @@ void clearRtcAlarms() {
 }
 
 void chimeSetup() {
+  pinMode(led, OUTPUT);
   pinMode(CHIME_PIN, OUTPUT);
   digitalWrite(CHIME_PIN, LOW);
   pinMode(CHIME_STOP_SWITCH_PIN, INPUT_PULLUP);
