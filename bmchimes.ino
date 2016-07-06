@@ -64,13 +64,7 @@ void alarmISR() {
 }
 
 void chimeStopSwitchISR() {
-  if (digitalRead(CHIME_STOP_SWITCH_PIN) == HIGH) {
-    chimeStopSwitchFlag = false;
-    digitalWrite(led, HIGH);
-  } else {
-    chimeStopSwitchFlag = true;
-    digitalWrite(led, LOW);
-  }
+  chimeStopSwitchFlag = true;
 }
 
 void printStringAsHexDump(String str) {
@@ -159,6 +153,7 @@ void startChiming() {
   Serial.println("Chiming!");
   // Set a flag indicating chiming has begun
   chiming = true;
+  chimeStopSwitchFlag = false;
   // Store time chiming began
   chimeStartMillis = millis();
   // Trigger chime GPIO
@@ -1048,11 +1043,10 @@ void clearRtcAlarms() {
 }
 
 void chimeSetup() {
-  pinMode(led, OUTPUT);
   pinMode(CHIME_PIN, OUTPUT);
   digitalWrite(CHIME_PIN, LOW);
   pinMode(CHIME_STOP_SWITCH_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(CHIME_STOP_SWITCH_PIN), chimeStopSwitchISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(CHIME_STOP_SWITCH_PIN), chimeStopSwitchISR, FALLING);
 }
 
 void basicSetup() {
@@ -1109,7 +1103,6 @@ void loop(void) {
   String nowString;
   DS3231AlarmFlag flag;
 
-  server.handleClient();
   if (alarmFired(flag)) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
@@ -1152,7 +1145,7 @@ void loop(void) {
   // Check time every loop, turn off chime GPIO if timeout
   if (chiming) {
     // Check for stop conditions (timeout, stop switch)
-    if ((millis() - chimeStartMillis > config.chimeStopTimeout) || chimeStopSwitchFlag) {
+    if (chimeStopSwitchFlag || (millis() - chimeStartMillis > config.chimeStopTimeout)) {
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
         Serial.println("Chime stop switch activated, turning off chime motor");
@@ -1164,5 +1157,8 @@ void loop(void) {
       calculateSleepAndChimeTiming();
       setRtcAlarms();
     }
+  } else {
+    // Can't handle web requests while waiting for time-critical interrupts.
+    server.handleClient();
   }
 }
