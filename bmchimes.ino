@@ -53,6 +53,7 @@ RtcDateTime sleepAlarmDateTime;
 RtcDateTime chimeAlarmDateTime;
 uint32_t chimeStartMillis = 0;
 uint32_t chimeStopMillis = 0;
+uint16_t lastChimeDurationMillis = 0;
 
 bool chiming = false;
 
@@ -162,8 +163,10 @@ void startChiming() {
 }
 
 void stopChiming() {
+  chimeStopMillis = millis();
   chimeMotorOff();
   chiming = false;
+  lastChimeDurationMillis = chimeStopMillis - chimeStartMillis;
 }
 
 // Web server handler functions
@@ -853,7 +856,7 @@ void collectStats() {
   float dieTempF = (dieTemp.AsFloat() * (9.0/5.0)) + 32.0;
   csvLine += String(dieTempF, 2);
   csvLine += ",";
-  csvLine += String(chimeStopMillis - chimeStartMillis);
+  csvLine += String(lastChimeDurationMillis);
   stats.println(csvLine);
 
   if (oldStats) {
@@ -1156,7 +1159,6 @@ void loop(void) {
   if (chiming) {
     // Check for stop conditions (timeout, stop switch)
     if (chimeStopSwitchFlag || (millis() - chimeStartMillis > config.chimeStopTimeout)) {
-      chimeStopMillis = millis();
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
         Serial.println("Chime stop switch activated, turning off chime motor");
