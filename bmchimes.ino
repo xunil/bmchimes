@@ -52,6 +52,7 @@ RtcDateTime wakeAlarmDateTime;
 RtcDateTime sleepAlarmDateTime;
 RtcDateTime chimeAlarmDateTime;
 uint32_t chimeStartMillis = 0;
+uint32_t chimeStopMillis = 0;
 
 bool chiming = false;
 
@@ -453,12 +454,12 @@ void handleStats() {
   } else {
     File stats = SPIFFS.open("/statistics.csv", "r");
     if (!stats) {
-        Serial.println("collectStats: file open failed while opening /statistics.csv");
+        Serial.println("handleStats: file open failed while opening /statistics.csv");
         message += "<h2>No statistics collected yet.</h2>\n";
     } else {
       message += "<table border=1 cellpadding=1 cellspacing=0>";
       message += "<tr>";
-      message += "<th>Date</th><th>Battery Voltage</th><th>RTC Temp (&deg;F)</th>";
+      message += "<th>Date</th><th>Battery Voltage</th><th>RTC Temp (&deg;F)</th><th>Chime Duration</th>";
       message += "</tr>";
       while (stats.available()) {
         // time,battery voltage,rtc temp
@@ -467,8 +468,10 @@ void handleStats() {
         statDateTime.InitWithEpoch32Time(token.toInt());
         token = stats.readStringUntil(',');
         float batteryVoltage = token.toFloat();
-        token = stats.readStringUntil('\n');
+        token = stats.readStringUntil(',');
         float rtcTemp = token.toFloat();
+        token = stats.readStringUntil('\n');
+        uint32_t chimeDuration = token.toInt();
 
         message += "<tr>";
         message += "<td>";
@@ -483,6 +486,10 @@ void handleStats() {
 
         message += "<td>";
         message += rtcTemp;
+        message += "</td>";
+
+        message += "<td>";
+        message += chimeDuration;
         message += "</td>";
         message += "</tr>";
       }
@@ -828,12 +835,13 @@ void collectStats() {
   }
 
   // Stats line consists of:
-  // time,battery voltage,rtc temp
+  // time,battery voltage,rtc temp,chime duration
   // time will be in Epoch32
   // battery voltage will be direct ADC reading
   // rtc temp will be a float
+  // chime duration is the number of milliseconds between chime start and the stop switch triggering
   // Example:
-  // 1466529391,13.80,55.75
+  // 1466529391,13.80,55.75,1348
   String csvLine;
   int lines = 1;
   RtcDateTime now = Rtc.GetDateTime();
@@ -844,6 +852,8 @@ void collectStats() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = (dieTemp.AsFloat() * (9.0/5.0)) + 32.0;
   csvLine += String(dieTempF, 2);
+  csvLine += ",";
+  csvLine += String(chimeStopMillis - chimeStartMillis);
   stats.println(csvLine);
 
   if (oldStats) {
@@ -1146,6 +1156,7 @@ void loop(void) {
   if (chiming) {
     // Check for stop conditions (timeout, stop switch)
     if (chimeStopSwitchFlag || (millis() - chimeStartMillis > config.chimeStopTimeout)) {
+      chimeStopMillis = millis();
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
         Serial.println("Chime stop switch activated, turning off chime motor");
