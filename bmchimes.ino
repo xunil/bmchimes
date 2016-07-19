@@ -6,7 +6,6 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
 #include <Wire.h>
 #include <time.h>
 #include "FS.h"
@@ -18,9 +17,10 @@
 #endif
 #include <RtcDS3231.h>
 
+#define HEARTBEAT_PIN 14
 #define RTC_ALARM_PIN 13
 #define CHIME_PIN 12
-#define CHIME_STOP_SWITCH_PIN 14
+#define CHIME_STOP_SWITCH_PIN 2
 
 const int statsInterval = 1;
 const int statsLinesPerDay = 24 * (60 / statsInterval);
@@ -59,6 +59,10 @@ bool chiming = false;
 
 volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
+
+uint32_t millisAtHeartbeatReset;
+uint8_t heartbeatBlips;
+uint8_t heartbeatPinState;
 
 // Utility functions
 void alarmISR() {
@@ -168,6 +172,38 @@ void stopChiming() {
   chiming = false;
   lastChimeDurationMillis = chimeStopMillis - chimeStartMillis;
 }
+
+void heartbeatReset() {
+#if 0
+  millisAtHeartbeatReset = millis();
+  heartbeatBlips = 0;
+  heartbeatPinState = LOW;
+  digitalWrite(HEARTBEAT_PIN, heartbeatPinState);
+#endif
+}
+
+void heartbeat() {
+#if 0
+  // There's scratches all around the coin slot
+  // Like a heartbeat, baby, trying to wake up
+  // But this machine can only swallow money
+  // You can't lay a patch by computer design
+  // It's just a lot of stupid, stupid signs
+  uint32_t millisDelta = millis() - millisAtMinuteMark;
+  if (millisDelta <= 1000) {
+    if (heartbeatBlips < 3 && millisDelta % 100 <= 0) {
+      if (heartbeatOn) {
+        heartbeatOn = false;
+        digitalWrite(HEARTBEAT_PIN, LOW);
+      } else {
+        heartbeatOn = true;
+        digitalWrite(HEARTBEAT_PIN, HIGH);
+      }
+    }
+  }
+#endif
+}
+
 
 // Web server handler functions
 
@@ -813,8 +849,8 @@ void writeConfig() {
 }
 
 float batteryVoltage() {
-  const float R7 = 10000.0;
-  const float R8 = 665.0;
+  const float R7 = 5000.0;
+  const float R8 = 220.0;
   uint16_t adcReading = analogRead(A0);
   // Vin = Vout / (R8/(R7+R8))
   float Vout = adcReading / 1024.0;
@@ -874,7 +910,7 @@ void collectStats() {
 void syncNTPTime() {
   Serial.println("Fetching time from NTP servers");
   // Pacific time zone hard coded
-  configTime(-(8 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
+  configTime(-(7 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
   // Wait up to a minute for NTP sync
   uint8_t attempts = 0;
   while (attempts <= 120 && !time(nullptr)) {
@@ -914,10 +950,6 @@ void connectToWiFi() {
       Serial.println(config.wiFiSSID);
       Serial.print("IP address: ");
       Serial.println(WiFi.localIP());
-
-      if (MDNS.begin("esp8266")) {
-        Serial.println("MDNS responder started");
-      }
     } else {
       Serial.println("");
       Serial.print("Unable to connect to ");
@@ -940,18 +972,9 @@ void connectToWiFi() {
 
 void writeNtpTimeToRtc() {
   Serial.println("Setting RTC time from NTP time");
-  struct tm *tmp;
   time_t now = time(nullptr);
-  tmp = localtime(&now);
-
-  RtcDateTime ntpDateTime = RtcDateTime(
-    tmp->tm_year + 1900,
-    tmp->tm_mon + 1,
-    tmp->tm_mday,
-    tmp->tm_hour,
-    tmp->tm_min,
-    tmp->tm_sec
-  );
+  RtcDateTime ntpDateTime = RtcDateTime();
+  ntpDateTime.InitWithEpoch32Time(now);
 
   Rtc.SetDateTime(ntpDateTime);
 }
@@ -981,14 +1004,17 @@ void calculateSleepAndChimeTiming() {
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
-  wakeAlarmDateTime = RtcDateTime(wakeTime);
+  wakeAlarmDateTime = RtcDateTime();
+  wakeAlarmDateTime.InitWithEpoch32Time(wakeTime);
   sleepAlarmDateTime = RtcDateTime(nextSleepTime);
+  sleepAlarmDateTime.InitWithEpoch32Time(nextSleepTime);
   chimeAlarmDateTime = RtcDateTime(chimeTime);
+  chimeAlarmDateTime.InitWithEpoch32Time(chimeTime);
 
   // Determine if the next chime will happen between the next sleep and the next wake
   if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
     // Chime will happen while we are asleep!  Skip the next sleep.
-    sleepAlarmDateTime = RtcDateTime(sleepTimeAfterNext);
+    sleepAlarmDateTime.InitWithEpoch32Time(sleepTimeAfterNext);
   }
 }
 
@@ -1064,6 +1090,8 @@ void chimeSetup() {
 
 void basicSetup() {
   pinMode(RTC_ALARM_PIN, INPUT);
+  pinMode(HEARTBEAT_PIN, OUTPUT);
+  digitalWrite(HEARTBEAT_PIN, LOW);
   Serial.begin(74880);
   Serial.println("");
   Wire.begin();
@@ -1116,6 +1144,8 @@ void loop(void) {
   String nowString;
   DS3231AlarmFlag flag;
 
+  yield();
+
   if (alarmFired(flag)) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
@@ -1147,11 +1177,13 @@ void loop(void) {
         // deepSleep expects a number in microseconds
         ESP.deepSleep(sleepDuration * 1e6);
       }
+      heartbeat();
 
-      // Collect statistics
-      if (now.Minute() % statsInterval == 0) {
+      // Collect statistics - this is time consuming, don't do it while chiming
+      if (!chiming && (now.Minute() % statsInterval == 0)) {
         collectStats();
       }
+
     }
   }
 
