@@ -1,27 +1,16 @@
-#if defined(ESP8266)
-#include <pgmspace.h>
-#else
-#include <avr/pgmspace.h>
-#endif
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <Wire.h>
 #include <time.h>
 #include "FS.h"
-
-#if defined(ESP8266)
-#include <pgmspace.h>
-#else
-#include <avr/pgmspace.h>
-#endif
 #include <RtcDS3231.h>
+#include <pgmspace.h>
 
-#define HEARTBEAT_PIN 14
-#define RTC_ALARM_PIN 13
-#define CHIME_PIN 12
-#define CHIME_STOP_SWITCH_PIN 2
-
+const int heartbeatPin = 2;
+const int rtcAlarmPin = 13;
+const int chimePin = 12;
+const int chimeStopSwitchPin = 14;
 const int statsInterval = 1;
 const int statsLinesPerDay = 24 * (60 / statsInterval);
 
@@ -60,9 +49,13 @@ bool chiming = false;
 volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
 
+const int heartbeatBlipDuration = 50; // In milliseconds
+const int heartbeatBlipInterval = 15 * 1000; // In milliseconds
 uint32_t millisAtHeartbeatReset;
-uint8_t heartbeatBlips;
-uint8_t heartbeatPinState;
+uint32_t millisAtLastHeartbeatBlip;
+uint8_t heartbeatBlipCount = 0;
+int heartbeatPinState = LOW;
+uint8_t heartbeatBlipMax = 8; // Actually 4 blinks
 
 // Utility functions
 void alarmISR() {
@@ -148,11 +141,11 @@ bool alarmFired(DS3231AlarmFlag& flag) {
 }
 
 void chimeMotorOn() {
-  digitalWrite(CHIME_PIN, HIGH);
+  digitalWrite(chimePin, HIGH);
 }
 
 void chimeMotorOff() {
-  digitalWrite(CHIME_PIN, LOW);
+  digitalWrite(chimePin, LOW);
 }
 
 void startChiming() {
@@ -174,34 +167,33 @@ void stopChiming() {
 }
 
 void heartbeatReset() {
-#if 0
   millisAtHeartbeatReset = millis();
-  heartbeatBlips = 0;
+  millisAtLastHeartbeatBlip = 0;
+  heartbeatBlipCount = 0;
   heartbeatPinState = LOW;
-  digitalWrite(HEARTBEAT_PIN, heartbeatPinState);
-#endif
+  digitalWrite(heartbeatPin, heartbeatPinState);
 }
 
 void heartbeat() {
-#if 0
   // There's scratches all around the coin slot
   // Like a heartbeat, baby, trying to wake up
   // But this machine can only swallow money
   // You can't lay a patch by computer design
   // It's just a lot of stupid, stupid signs
-  uint32_t millisDelta = millis() - millisAtMinuteMark;
-  if (millisDelta <= 1000) {
-    if (heartbeatBlips < 3 && millisDelta % 100 <= 0) {
-      if (heartbeatOn) {
-        heartbeatOn = false;
-        digitalWrite(HEARTBEAT_PIN, LOW);
+  if (heartbeatBlipCount < heartbeatBlipMax) {
+    uint32_t millisNow = millis();
+    uint32_t millisDelta = millisNow - millisAtHeartbeatReset;
+    if (millisDelta % heartbeatBlipDuration == 0 && millisAtLastHeartbeatBlip != millisNow) {
+      millisAtLastHeartbeatBlip = millisNow;
+      if (heartbeatPinState == LOW) {
+        heartbeatPinState = HIGH;
       } else {
-        heartbeatOn = true;
-        digitalWrite(HEARTBEAT_PIN, HIGH);
+        heartbeatPinState = LOW;
       }
+      digitalWrite(heartbeatPin, heartbeatPinState);
+      heartbeatBlipCount++;
     }
   }
-#endif
 }
 
 
@@ -1065,7 +1057,7 @@ void setRtcAlarms() {
   }
   
   Rtc.LatchAlarmsTriggeredFlags();
-  attachInterrupt(digitalPinToInterrupt(RTC_ALARM_PIN), alarmISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(rtcAlarmPin), alarmISR, FALLING);
 }
 
 void clearRtcAlarms() {
@@ -1082,16 +1074,16 @@ void clearRtcAlarms() {
 }
 
 void chimeSetup() {
-  pinMode(CHIME_PIN, OUTPUT);
-  digitalWrite(CHIME_PIN, LOW);
-  pinMode(CHIME_STOP_SWITCH_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(CHIME_STOP_SWITCH_PIN), chimeStopSwitchISR, FALLING);
+  pinMode(chimePin, OUTPUT);
+  digitalWrite(chimePin, LOW);
+  pinMode(chimeStopSwitchPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(chimeStopSwitchPin), chimeStopSwitchISR, FALLING);
 }
 
 void basicSetup() {
-  pinMode(RTC_ALARM_PIN, INPUT);
-  pinMode(HEARTBEAT_PIN, OUTPUT);
-  digitalWrite(HEARTBEAT_PIN, LOW);
+  pinMode(rtcAlarmPin, INPUT);
+  pinMode(heartbeatPin, OUTPUT);
+  digitalWrite(heartbeatPin, LOW);
   Serial.begin(74880);
   Serial.println("");
   Wire.begin();
@@ -1132,6 +1124,7 @@ void setup(void) {
   }
   connectToWiFi();
 
+  heartbeatReset();
   rtcSetup();
   clearRtcAlarms();
   calculateSleepAndChimeTiming();
@@ -1144,6 +1137,7 @@ void loop(void) {
   String nowString;
   DS3231AlarmFlag flag;
 
+  // Probably unnecessary, but doesn't hurt anything.
   yield();
 
   if (alarmFired(flag)) {
@@ -1177,7 +1171,9 @@ void loop(void) {
         // deepSleep expects a number in microseconds
         ESP.deepSleep(sleepDuration * 1e6);
       }
-      heartbeat();
+
+      // Start of a new minute - reset heartbeat
+      heartbeatReset();
 
       // Collect statistics - this is time consuming, don't do it while chiming
       if (!chiming && (now.Minute() % statsInterval == 0)) {
@@ -1206,4 +1202,6 @@ void loop(void) {
     // Can't handle web requests while waiting for time-critical interrupts.
     server.handleClient();
   }
+  
+  heartbeat();
 }
