@@ -45,6 +45,7 @@ uint32_t chimeStopMillis = 0;
 uint16_t lastChimeDurationMillis = 0;
 
 bool chiming = false;
+bool shouldCollectStats = false;
 
 volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
@@ -1151,6 +1152,7 @@ void loop(void) {
       if (!chiming) {
         startChiming();
       } else {
+        // Hopefully we only get here if someone has triggered a manual chime.
         Serial.println("Chiming already in progress, skipping scheduled chime.");
       }
     }
@@ -1175,9 +1177,10 @@ void loop(void) {
       // Start of a new minute - reset heartbeat
       heartbeatReset();
 
-      // Collect statistics - this is time consuming, don't do it while chiming
-      if (!chiming && (now.Minute() % statsInterval == 0)) {
-        collectStats();
+      // Collect statistics - this is time consuming, don't do it while chiming.
+      // Instead, set a flag.  Timing of stats collection is far from critical.
+      if (now.Minute() % statsInterval == 0) {
+        shouldCollectStats = true;
       }
 
     }
@@ -1199,6 +1202,11 @@ void loop(void) {
       setRtcAlarms();
     }
   } else {
+    if (shouldCollectStats) {
+      shouldCollectStats = false;
+      collectStats();
+    }
+
     // Can't handle web requests while waiting for time-critical interrupts.
     server.handleClient();
   }
