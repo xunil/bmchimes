@@ -874,29 +874,30 @@ void collectStats() {
   // chime duration is the number of milliseconds between chime start and the stop switch triggering
   // Example:
   // 1466529391,13.80,55.75,1348
-  String csvLine;
+  String csvBlob;
   int lines = 1;
   RtcDateTime now = Rtc.GetDateTime();
-  csvLine = String(now.Epoch32Time());
-  csvLine += ",";
-  csvLine += String(batteryVoltage(), 2);
-  csvLine += ",";
+  csvBlob = String(now.Epoch32Time());
+  csvBlob += ",";
+  csvBlob += String(batteryVoltage(), 2);
+  csvBlob += ",";
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = (dieTemp.AsFloat() * (9.0/5.0)) + 32.0;
-  csvLine += String(dieTempF, 2);
-  csvLine += ",";
-  csvLine += String(lastChimeDurationMillis);
-  stats.println(csvLine);
+  csvBlob += String(dieTempF, 2);
+  csvBlob += ",";
+  csvBlob += String(lastChimeDurationMillis);
+  csvBlob += "\n";
 
   if (oldStats) {
     // If there are any old statistics to copy to the new file
     while (oldStats.available() && lines < statsLinesPerDay) {
-      csvLine = oldStats.readStringUntil('\n');
-      stats.println(csvLine);
+      csvBlob += oldStats.readStringUntil('\n');
+      csvBlob += "\n";
       lines++;
     }
     oldStats.close();
   }
+  stats.print(csvBlob);
   stats.close();
 }
 
@@ -1182,7 +1183,6 @@ void loop(void) {
       if (now.Minute() % statsInterval == 0) {
         shouldCollectStats = true;
       }
-
     }
   }
 
@@ -1203,13 +1203,11 @@ void loop(void) {
     }
   } else {
     if (shouldCollectStats) {
-      shouldCollectStats = false;
       collectStats();
+      shouldCollectStats = false;
     }
-
-    // Can't handle web requests while waiting for time-critical interrupts.
-    server.handleClient();
   }
   
+  server.handleClient();
   heartbeat();
 }

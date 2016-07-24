@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <export version="D">
   <design>
-    <source>C:\Users\Robert\Documents\Arduino\bmchimes\bmchimes.sch</source>
-    <date>6/12/2016 10:04:15 AM</date>
+    <source>C:/Users/xunil/Documents/Arduino/bmchimes/bmchimes.sch</source>
+    <date>7/23/2016 12:20:50 PM</date>
     <tool>Eeschema 4.0.2-stable</tool>
     <sheet number="1" name="/" tstamps="/">
       <title_block>
@@ -440,10 +440,10 @@
       <uri>C:\Program Files\KiCad\share\kicad\library\conn.lib</uri>
     </library>
     <library logical="74hc7014">
-      <uri>C:\Users\Robert\Documents\Arduino\bmchimes\74hc7014.lib</uri>
+      <uri>74hc7014.lib</uri>
     </library>
     <library logical="esp07">
-      <uri>C:\Users\Robert\Documents\Arduino\bmchimes\esp07.lib</uri>
+      <uri>esp07.lib</uri>
     </library>
   </libraries>
   <nets>
