@@ -957,7 +957,12 @@ void connectToWiFi() {
     Serial.print(config.wiFiSSID);
     Serial.print("...");
     Serial.flush();
-    WiFi.softAP(ssid);
+    if (config.wiFiPassword.length() > 0) {
+      WiFi.softAP(ssid, password);
+    } else {
+      WiFi.softAP(ssid);
+    }
+
     Serial.println("done.");
     Serial.print("My IP address is ");
     Serial.println(WiFi.softAPIP());
