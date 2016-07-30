@@ -1177,11 +1177,16 @@ void loop(void) {
         dateTimeStringFromRtcDateTime(now, nowString);
         Serial.print("Time is now ");
         Serial.println(nowString);
-        Serial.print("Sleeping for ");
-        Serial.print(sleepDuration);
-        Serial.println(" seconds");
-        // deepSleep expects a number in microseconds
-        ESP.deepSleep(sleepDuration * 1e6);
+        if (sleepDuration == 0) {
+          // Sanity check; if we sleep for 0 seconds, the ESP never wakes up.
+          Serial.println("Sleep duration is zero, skipping sleep.");
+        } else {
+          Serial.print("Sleeping for ");
+          Serial.print(sleepDuration);
+          Serial.println(" seconds");
+          // deepSleep expects a number in microseconds
+          ESP.deepSleep(sleepDuration * 1e6);
+        }
       }
 
       // Collect statistics - this is time consuming, don't do it while chiming.
