@@ -51,12 +51,12 @@ volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
 
 const int heartbeatBlipDuration = 50; // In milliseconds
-const int heartbeatBlipInterval = 15 * 1000; // In milliseconds
+const int heartbeatBlipInterval = 5 * 1000; // In milliseconds
 uint32_t millisAtHeartbeatReset;
 uint32_t millisAtLastHeartbeatBlip;
 uint8_t heartbeatBlipCount = 0;
 int heartbeatPinState = LOW;
-uint8_t heartbeatBlipMax = 8; // Actually 4 blinks
+uint8_t heartbeatBlipMax = 2 * 2; // 2 blinks - on, off, on, off, hence the multiply by 2
 
 // Utility functions
 void alarmISR() {
@@ -1142,6 +1142,10 @@ void loop(void) {
   // Probably unnecessary, but doesn't hurt anything.
   yield();
 
+  if (millis() % heartbeatBlipInterval == 0) {
+    heartbeatReset();
+  }
+
   if (alarmFired(flag)) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
@@ -1174,9 +1178,6 @@ void loop(void) {
         // deepSleep expects a number in microseconds
         ESP.deepSleep(sleepDuration * 1e6);
       }
-
-      // Start of a new minute - reset heartbeat
-      heartbeatReset();
 
       // Collect statistics - this is time consuming, don't do it while chiming.
       // Instead, set a flag.  Timing of stats collection is far from critical.
