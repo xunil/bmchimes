@@ -6,6 +6,7 @@
 #include "FS.h"
 #include <RtcDS3231.h>
 #include <pgmspace.h>
+#include "StringStream.h"
 
 const int heartbeatPin = 2;
 const int rtcAlarmPin = 13;
@@ -26,7 +27,9 @@ struct BMChimeConfig {
   uint8_t stayAwakeMins;
   uint8_t chimeEveryN; 
   uint8_t chimeOffset; 
+  uint8_t interChimeDelay; 
   uint16_t chimeStopTimeout; 
+  bool heartbeatEnabled;
 } config;
 
 char ssid[64];
@@ -222,9 +225,13 @@ void handleRoot() {
   message += "RTC die temperature ";
   message += dieTempF;
   message += "&deg;F<br/>\n";
-  message += "Next sleep scheduled at ";
-  message += sleepAlarmDateTimeString;
-  message += "<br/>\n";
+  if (config.sleepEnabled) {
+    message += "Next sleep scheduled at ";
+    message += sleepAlarmDateTimeString;
+    message += "<br/>\n";
+  } else {
+    message += "Sleep disabled, no sleep scheduled<br/>\n";
+  }
   message += "Next chime scheduled at ";
   message += chimeAlarmDateTimeString;
   message += "<br/>\n";
@@ -320,94 +327,126 @@ void handleConfig() {
 
   if (server.method() == HTTP_POST) {
     // User selected save
+    // Checkbox form elements are not passed in the POST unless they are checked;
+    // therefore, assume they are unchecked and let the for loop below correct this
+    config.sleepEnabled = false;
+    config.connectWiFiAtReset = false;
+    config.heartbeatEnabled = false;
+
     for (uint8_t i = 0; i < server.args(); i++) {
-      if (server.argName(i) == "DeviceDescription") {
+      String argName = String(server.argName(i));
+      String argValue = String(server.arg(i));
+      Serial.print("handleConfig(): argName = ");
+      Serial.print(argName);
+      Serial.print("; argValue = ");
+      Serial.println(argValue);
+
+      if (argName == "DeviceDescription") {
         Serial.print("Setting Device Description ");
-        Serial.println(server.arg(i));
-        config.deviceDescription = server.arg(i);
-      } else if (server.argName(i) == "WiFiSSID") {
+        Serial.println(argValue);
+        config.deviceDescription = argValue;
+      } else if (argName == "WiFiSSID") {
         Serial.print("Setting WiFi SSID ");
-        Serial.println(server.arg(i));
-        config.wiFiSSID = server.arg(i);
-      } else if (server.argName(i) == "WiFiPassword") {
+        Serial.println(argValue);
+        config.wiFiSSID = argValue;
+      } else if (argName == "WiFiPassword") {
         Serial.print("Setting WiFi password ");
-        Serial.println(server.arg(i));
-        config.wiFiPassword = server.arg(i);
-      } else if (server.argName(i) == "WiFiMode") {
+        Serial.println(argValue);
+        config.wiFiPassword = argValue;
+      } else if (argName == "WiFiMode") {
         // Either Station or AP
         Serial.print("Setting WiFi mode ");
-        Serial.println(server.arg(i));
-        server.arg(i).toUpperCase();
-        if (server.arg(i) == "AP") {
+        Serial.println(argValue);
+        argValue.toUpperCase();
+        if (argValue == "AP") {
           config.wiFiMode = WIFI_AP;
-        } else if (server.arg(i) == "STATION") {
+        } else if (argValue == "STATION") {
           config.wiFiMode = WIFI_STA;
         } else {
           Serial.print("Unknown WiFi mode ");
-          Serial.print(server.arg(i));
+          Serial.print(argValue);
           Serial.println("; defaulting to STATION");
           config.wiFiMode = WIFI_STA;
         }
-      } else if (server.argName(i) == "ConnectWiFiAtReset") {
+      } else if (argName == "ConnectWiFiAtReset") {
         // true or false
         Serial.print("Setting connect WiFi at reset flag to ");
-        Serial.println(server.arg(i));
-        server.arg(i).toUpperCase();
-        if (server.arg(i) == "TRUE" || server.arg(i) == "ON") {
+        Serial.println(argValue);
+        argValue.toUpperCase();
+        if (argValue == "TRUE" || argValue == "ON") {
           config.connectWiFiAtReset = true;
-        } else if (server.arg(i) == "FALSE" || server.arg(i) == "OFF") {
+        } else if (argValue == "FALSE" || argValue == "OFF") {
           config.connectWiFiAtReset = false;
         } else {
           Serial.print("Unknown boolean value ");
-          Serial.print(server.arg(i));
+          Serial.print(argValue);
           Serial.println("; defaulting to TRUE");
           config.connectWiFiAtReset = true;
         }
-      } else if (server.argName(i) == "SleepEnabled") {
+      } else if (argName == "SleepEnabled") {
         // true or false
         Serial.print("Setting sleep enabled flag to ");
-        Serial.println(server.arg(i));
-        server.arg(i).toUpperCase();
-        if (server.arg(i) == "TRUE" || server.arg(i) == "ON") {
+        Serial.println(argValue);
+        argValue.toUpperCase();
+        if (argValue == "TRUE" || argValue == "ON") {
           config.sleepEnabled = true;
-        } else if (server.arg(i) == "FALSE" || server.arg(i) == "OFF") {
+        } else if (argValue == "FALSE" || argValue == "OFF") {
           config.sleepEnabled = false;
         } else {
           Serial.print("Unknown boolean value ");
-          Serial.print(server.arg(i));
+          Serial.print(argValue);
           Serial.println("; defaulting to TRUE");
           config.sleepEnabled = true;
         }
-      } else if (server.argName(i) == "WakeEveryN") {
+      } else if (argName == "WakeEveryN") {
         Serial.print("Setting wake every N to ");
-        Serial.println(server.arg(i));
-        config.wakeEveryN = server.arg(i).toInt();
-      } else if (server.argName(i) == "StayAwakeMins") {
+        Serial.println(argValue);
+        config.wakeEveryN = argValue.toInt();
+      } else if (argName == "StayAwakeMins") {
         Serial.print("Setting stay awake time to ");
-        Serial.println(server.arg(i));
-        config.stayAwakeMins = server.arg(i).toInt();
-      } else if (server.argName(i) == "ChimeEveryN") {
+        Serial.println(argValue);
+        config.stayAwakeMins = argValue.toInt();
+      } else if (argName == "ChimeEveryN") {
         Serial.print("Setting chime every N to ");
-        Serial.println(server.arg(i));
-        config.chimeEveryN = server.arg(i).toInt();
-      } else if (server.argName(i) == "ChimeOffset") {
+        Serial.println(argValue);
+        config.chimeEveryN = argValue.toInt();
+      } else if (argName == "ChimeOffset") {
         Serial.print("Setting chime offset to ");
-        Serial.println(server.arg(i));
-        config.chimeOffset = server.arg(i).toInt();
-      } else if (server.argName(i) == "ChimeStopTimeout") {
-        if (server.arg(i).toInt() > 65535) {
+        Serial.println(argValue);
+        config.chimeOffset = argValue.toInt();
+      } else if (argName == "InterChimeDelay") {
+        Serial.print("Setting inter-chime delay to ");
+        Serial.println(argValue);
+        config.interChimeDelay = argValue.toInt();
+      } else if (argName == "ChimeStopTimeout") {
+        if (argValue.toInt() > 65535) {
           Serial.print("Value ");
-          Serial.print(server.arg(i));
+          Serial.print(argValue);
           Serial.println(" larger than maximum 65535. Limiting to 65535.");
           config.chimeStopTimeout = 65535;
         } else {
           Serial.print("Setting chime stop timeout to ");
-          Serial.println(server.arg(i));
-          config.chimeStopTimeout = server.arg(i).toInt();
+          Serial.println(argValue);
+          config.chimeStopTimeout = argValue.toInt();
+        }
+      } else if (argName == "HeartbeatEnabled") {
+        // true or false
+        Serial.print("Setting heartbeat enabled flag to ");
+        Serial.println(argValue);
+        argValue.toUpperCase();
+        if (argValue == "TRUE" || argValue == "ON") {
+          config.heartbeatEnabled = true;
+        } else if (argValue == "FALSE" || argValue == "OFF") {
+          config.heartbeatEnabled = false;
+        } else {
+          Serial.print("Unknown boolean value ");
+          Serial.print(argValue);
+          Serial.println("; defaulting to TRUE");
+          config.heartbeatEnabled = true;
         }
       } else {
         Serial.print("Unknown configuration key ");
-        Serial.println(server.argName(i));
+        Serial.println(argName);
       }
     }
 
@@ -419,6 +458,8 @@ void handleConfig() {
     }
   }
 
+  message += "<table border=0 cellspacing=10 cellpadding=10>\n";
+  message += "<tr><td>\n";
   message += "<form action=\"/config\" method=\"post\">\n";
   message += "<label>Device description <input type=\"text\" name=\"DeviceDescription\" value=\"";
   message += config.deviceDescription;
@@ -454,7 +495,7 @@ void handleConfig() {
   message += "<label>Wake every <input type=\"text\" name=\"WakeEveryN\" value=\"";
   message += config.wakeEveryN;
   message += "\"/> minutes</label><br/>\n";
-  message += "<label>Stay awake for <input type=\"text\" name=\"WakeEveryN\" value=\"";
+  message += "<label>Stay awake for <input type=\"text\" name=\"StayAwakeMins\" value=\"";
   message += config.stayAwakeMins;
   message += "\"/> minutes</label><br/>\n";
   message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryN\" value=\"";
@@ -463,12 +504,33 @@ void handleConfig() {
   message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
   message += config.chimeOffset;
   message += "\"/> seconds</label><br/>\n";
+  message += "<label>Inter-chime delay <input type=\"text\" name=\"InterChimeDelay\" value=\"";
+  message += config.interChimeDelay;
+  message += "\"/> seconds</label><br/>\n";
   message += "<label>Chime stop timeout <input type=\"text\" name=\"ChimeStopTimeout\" value=\"";
   message += config.chimeStopTimeout;
   message += "\"/> milliseconds (max 65535)</label><br/>\n";
+  message += "<label>Heartbeat enabled <input type=\"checkbox\" name=\"HeartbeatEnabled\" ";
+  if (config.heartbeatEnabled) {
+    message += "checked";
+  }
+  message += "/></label><br/>\n";
   message += "<input type=\"submit\" value=\"Save\"/>\n";
   message += "</form>\n";
   message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
+  message += "</td>\n";
+  message += "<td>\n";
+  message += "<h4>Current config</h4><br/>\n";
+  message += "<pre>\n";
+  String configFileText;
+  if (readConfigToString(configFileText)) {
+    message += configFileText;
+  } else {
+    message += "Error reading config file!";
+  }
+  message += "</pre>\n";
+  message += "</td></tr>\n";
+  message += "</table>\n";
   message += "</body>\n</html>\n";
   
   server.send(200, "text/html", message);
@@ -632,10 +694,27 @@ void setConfigDefaults() {
   config.stayAwakeMins = 1;
   config.chimeEveryN = 2;
   config.chimeOffset = 0;
+  config.interChimeDelay = 0;
   config.chimeStopTimeout = 65535;
+  config.heartbeatEnabled = true;
 }
 
-bool readConfig() {
+bool readConfigToString(String& configFileText) {
+  File f = SPIFFS.open("/bmchimes.cfg", "r");
+  if (!f) {
+      Serial.println("readConfigToString: file open failed");
+      return false;
+  }
+  while (f.available()) {
+    yield();
+    configFileText += f.readString();
+  }
+  return true;
+}
+
+bool readConfigFile() {
+  bool result = false;
+
   Serial.println("Opening config file");
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
@@ -645,11 +724,18 @@ bool readConfig() {
   Serial.flush();
   Serial.println("Beginning read of config file");
   Serial.flush();
+  result = readConfigFromStream(f);
+  Serial.println("Closing config file");
+  f.close();
+  return result;
+}
+
+bool readConfigFromStream(Stream& s) {
   int loops = 0;
-  while (loops < 50 && f.available()) {
+  while (loops < 50 && s.available()) {
     yield();
     Serial.flush();
-    String key = f.readStringUntil('=');
+    String key = s.readStringUntil('=');
     key.trim();
 #ifdef DEBUG
     Serial.print("Read key ");
@@ -659,7 +745,7 @@ bool readConfig() {
     Serial.println("");
 #endif
 
-    String value = f.readStringUntil('\n');
+    String value = s.readStringUntil('\n');
     value.trim();
 #ifdef DEBUG
     Serial.print("Read value ");
@@ -749,6 +835,10 @@ bool readConfig() {
       Serial.print("Setting chime offset to ");
       Serial.println(value);
       config.chimeOffset = value.toInt();
+    } else if (key == "InterChimeDelay") {
+      Serial.print("Setting inter-chime delay to ");
+      Serial.println(value);
+      config.interChimeDelay = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
         Serial.print("Value ");
@@ -760,14 +850,27 @@ bool readConfig() {
         Serial.println(value);
         config.chimeStopTimeout = value.toInt();
       }
+    } else if (key == "HeartbeatEnabled") {
+      // true or false
+      Serial.print("Setting heartbeat enabled flag to ");
+      Serial.println(value);
+      value.toUpperCase();
+      if (value == "TRUE") {
+        config.heartbeatEnabled = true;
+      } else if (value == "FALSE") {
+        config.heartbeatEnabled = false;
+      } else {
+        Serial.print("Unknown boolean value ");
+        Serial.print(value);
+        Serial.println("; defaulting to TRUE");
+        config.heartbeatEnabled = true;
+      }
     } else {
       Serial.print("Unknown configuration key ");
       Serial.println(key);
     }
     loops++;
   }
-  Serial.println("Closing config file");
-  f.close();
   Serial.println("Config read complete");
   return true;
 }
@@ -836,8 +939,16 @@ void writeConfig() {
   f.println(config.chimeEveryN);
   f.print("ChimeOffset=");
   f.println(config.chimeOffset);
+  f.print("InterChimeDelay=");
+  f.println(config.interChimeDelay);
   f.print("ChimeStopTimeout=");
   f.println(config.chimeStopTimeout);
+  f.print("HeartbeatEnabled=");
+  if (config.heartbeatEnabled == true) {
+    f.println("TRUE");
+  } else {
+    f.println("FALSE");
+  }
   f.close();
 }
 
@@ -1087,10 +1198,13 @@ void chimeSetup() {
   attachInterrupt(digitalPinToInterrupt(chimeStopSwitchPin), chimeStopSwitchISR, FALLING);
 }
 
-void basicSetup() {
-  pinMode(rtcAlarmPin, INPUT);
+void heartbeatSetup() {
   pinMode(heartbeatPin, OUTPUT);
   digitalWrite(heartbeatPin, LOW);
+}
+
+void basicSetup() {
+  pinMode(rtcAlarmPin, INPUT);
   Serial.begin(74880);
   Serial.println("");
   Wire.begin();
@@ -1123,20 +1237,23 @@ void startWebServer() {
 void setup(void) {
   basicSetup();
   setupSPIFFS();
-  if (!readConfig()) {
+  if (!readConfigFile()) {
     Serial.println("Config read failed, setting defaults");
     setConfigDefaults();
     writeConfig();
-    readConfig();
+    readConfigFile();
   }
   connectToWiFi();
 
-  heartbeatReset();
   rtcSetup();
   clearRtcAlarms();
   calculateSleepAndChimeTiming();
   setRtcAlarms();
   chimeSetup();
+  if (config.heartbeatEnabled) {
+    heartbeatSetup();
+    heartbeatReset();
+  }
   startWebServer();
 }
 
@@ -1147,7 +1264,7 @@ void loop(void) {
   // Probably unnecessary, but doesn't hurt anything.
   yield();
 
-  if (millis() % heartbeatBlipInterval == 0) {
+  if (config.heartbeatEnabled && millis() % heartbeatBlipInterval == 0) {
     heartbeatReset();
   }
 
@@ -1220,5 +1337,7 @@ void loop(void) {
   }
   
   server.handleClient();
-  heartbeat();
+  if (config.heartbeatEnabled) {
+    heartbeat();
+  }
 }
