@@ -23,11 +23,12 @@ struct BMChimeConfig {
   WiFiMode wiFiMode;
   bool connectWiFiAtReset;
   bool sleepEnabled;
-  uint8_t wakeEveryN;
-  uint8_t stayAwakeMins;
-  uint8_t chimeEveryN; 
-  uint8_t chimeOffset; 
-  uint8_t interChimeDelay; 
+  uint8_t wakeEveryNSeconds;
+  uint8_t stayAwakeSeconds;
+  uint8_t chimeEveryNSeconds; 
+  uint8_t chimeOffsetSeconds; 
+  uint8_t interChimeDelaySeconds; 
+  uint8_t interHourChimeDelaySeconds; 
   uint16_t chimeStopTimeout; 
   bool heartbeatEnabled;
 } config;
@@ -48,6 +49,9 @@ uint32_t chimeStopMillis = 0;
 uint16_t lastChimeDurationMillis = 0;
 
 bool chiming = false;
+enum chime_state_t { CHIME_INITIAL = 0, CHIME_SECOND = 1, CHIME_THIRD = 2, CHIME_HOUR = 3 } chimeState = CHIME_INITIAL;
+uint8_t chimeHoursRungOut = 0;
+#define NUM_CHIME_STATES 4
 bool shouldCollectStats = false;
 
 volatile bool chimeStopSwitchFlag = false;
@@ -124,7 +128,7 @@ void getNtpDateTimeString(String& dateTimeBuf) {
 uint16_t secondsTilNextN(uint8_t N) {
   // 16 bit return value should be sufficient; we will chime or wake at least once an hour.
   RtcDateTime now = Rtc.GetDateTime();
-  
+
   uint16_t seconds = ((N - (now.Minute() % N)) - 1) * 60;
   seconds += 60 - now.Second();
 
@@ -153,6 +157,26 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
+  Serial.print("Chime state is ");
+  switch (chimeState) {
+    case CHIME_INITIAL:
+      Serial.println("INITIAL");
+      break;
+    case CHIME_SECOND:
+      Serial.println("SECOND");
+      break;
+    case CHIME_THIRD:
+      Serial.println("THIRD");
+      break;
+    case CHIME_HOUR:
+      Serial.print("HOUR (");
+      Serial.print(chimeHoursRungOut);
+      Serial.println(" hours rung out)");
+      break;
+    default:
+      Serial.println("UNKNOWN");
+  }
+
   Serial.println("Chiming!");
   // Set a flag indicating chiming has begun
   chiming = true;
@@ -398,26 +422,30 @@ void handleConfig() {
           Serial.println("; defaulting to TRUE");
           config.sleepEnabled = true;
         }
-      } else if (argName == "WakeEveryN") {
+      } else if (argName == "WakeEveryNSeconds") {
         Serial.print("Setting wake every N to ");
         Serial.println(argValue);
-        config.wakeEveryN = argValue.toInt();
-      } else if (argName == "StayAwakeMins") {
+        config.wakeEveryNSeconds = argValue.toInt();
+      } else if (argName == "StayAwakeSeconds") {
         Serial.print("Setting stay awake time to ");
         Serial.println(argValue);
-        config.stayAwakeMins = argValue.toInt();
-      } else if (argName == "ChimeEveryN") {
+        config.stayAwakeSeconds = argValue.toInt();
+      } else if (argName == "ChimeEveryNSeconds") {
         Serial.print("Setting chime every N to ");
         Serial.println(argValue);
-        config.chimeEveryN = argValue.toInt();
+        config.chimeEveryNSeconds = argValue.toInt();
       } else if (argName == "ChimeOffset") {
         Serial.print("Setting chime offset to ");
         Serial.println(argValue);
-        config.chimeOffset = argValue.toInt();
-      } else if (argName == "InterChimeDelay") {
+        config.chimeOffsetSeconds = argValue.toInt();
+      } else if (argName == "InterChimeDelaySeconds") {
         Serial.print("Setting inter-chime delay to ");
         Serial.println(argValue);
-        config.interChimeDelay = argValue.toInt();
+        config.interChimeDelaySeconds = argValue.toInt();
+      } else if (argName == "InterHourChimeDelaySeconds") {
+        Serial.print("Setting inter-hour-chime delay to ");
+        Serial.println(argValue);
+        config.interHourChimeDelaySeconds = argValue.toInt();
       } else if (argName == "ChimeStopTimeout") {
         if (argValue.toInt() > 65535) {
           Serial.print("Value ");
@@ -492,20 +520,23 @@ void handleConfig() {
     message += "checked";
   }
   message += "/></label><br/>\n";
-  message += "<label>Wake every <input type=\"text\" name=\"WakeEveryN\" value=\"";
-  message += config.wakeEveryN;
-  message += "\"/> minutes</label><br/>\n";
-  message += "<label>Stay awake for <input type=\"text\" name=\"StayAwakeMins\" value=\"";
-  message += config.stayAwakeMins;
-  message += "\"/> minutes</label><br/>\n";
-  message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryN\" value=\"";
-  message += config.chimeEveryN;
-  message += "\"/> minutes</label><br/>\n";
-  message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
-  message += config.chimeOffset;
+  message += "<label>Wake every <input type=\"text\" name=\"WakeEveryNSeconds\" value=\"";
+  message += config.wakeEveryNSeconds;
   message += "\"/> seconds</label><br/>\n";
-  message += "<label>Inter-chime delay <input type=\"text\" name=\"InterChimeDelay\" value=\"";
-  message += config.interChimeDelay;
+  message += "<label>Stay awake for <input type=\"text\" name=\"StayAwakeSeconds\" value=\"";
+  message += config.stayAwakeSeconds;
+  message += "\"/> seconds</label><br/>\n";
+  message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryNSeconds\" value=\"";
+  message += config.chimeEveryNSeconds;
+  message += "\"/> seconds</label><br/>\n";
+  message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
+  message += config.chimeOffsetSeconds;
+  message += "\"/> seconds</label><br/>\n";
+  message += "<label>Inter-chime delay <input type=\"text\" name=\"InterChimeDelaySeconds\" value=\"";
+  message += config.interChimeDelaySeconds;
+  message += "\"/> seconds</label><br/>\n";
+  message += "<label>Inter-hour-chime delay <input type=\"text\" name=\"InterHourChimeDelaySeconds\" value=\"";
+  message += config.interHourChimeDelaySeconds;
   message += "\"/> seconds</label><br/>\n";
   message += "<label>Chime stop timeout <input type=\"text\" name=\"ChimeStopTimeout\" value=\"";
   message += config.chimeStopTimeout;
@@ -690,11 +721,12 @@ void setConfigDefaults() {
   config.wiFiPassword = "";
   config.wiFiMode = WIFI_AP;
   config.sleepEnabled = false;
-  config.wakeEveryN = 1;
-  config.stayAwakeMins = 1;
-  config.chimeEveryN = 2;
-  config.chimeOffset = 0;
-  config.interChimeDelay = 0;
+  config.wakeEveryNSeconds = 240;
+  config.stayAwakeSeconds = 120;
+  config.chimeEveryNSeconds = 180;
+  config.chimeOffsetSeconds = 0;
+  config.interChimeDelaySeconds = 18;
+  config.interHourChimeDelaySeconds = 6;
   config.chimeStopTimeout = 65535;
   config.heartbeatEnabled = true;
 }
@@ -819,26 +851,30 @@ bool readConfigFromStream(Stream& s) {
         Serial.println("; defaulting to TRUE");
         config.sleepEnabled = true;
       }
-    } else if (key == "WakeEveryN") {
-      Serial.print("Setting wake every N to ");
+    } else if (key == "WakeEveryNSeconds") {
+      Serial.print("Setting wake every N seconds to ");
       Serial.println(value);
-      config.wakeEveryN = value.toInt();
-    } else if (key == "StayAwakeMins") {
-      Serial.print("Setting stay awake time to ");
+      config.wakeEveryNSeconds = value.toInt();
+    } else if (key == "StayAwakeSeconds") {
+      Serial.print("Setting stay awake seconds to ");
       Serial.println(value);
-      config.stayAwakeMins = value.toInt();
-    } else if (key == "ChimeEveryN") {
-      Serial.print("Setting chime every N to ");
+      config.stayAwakeSeconds = value.toInt();
+    } else if (key == "ChimeEveryNSeconds") {
+      Serial.print("Setting chime every N seconds to ");
       Serial.println(value);
-      config.chimeEveryN = value.toInt();
+      config.chimeEveryNSeconds = value.toInt();
     } else if (key == "ChimeOffset") {
       Serial.print("Setting chime offset to ");
       Serial.println(value);
-      config.chimeOffset = value.toInt();
-    } else if (key == "InterChimeDelay") {
+      config.chimeOffsetSeconds = value.toInt();
+    } else if (key == "InterChimeDelaySeconds") {
       Serial.print("Setting inter-chime delay to ");
       Serial.println(value);
-      config.interChimeDelay = value.toInt();
+      config.interChimeDelaySeconds = value.toInt();
+    } else if (key == "InterHourChimeDelaySeconds") {
+      Serial.print("Setting inter-hour-chime delay to ");
+      Serial.println(value);
+      config.interHourChimeDelaySeconds = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
         Serial.print("Value ");
@@ -931,16 +967,18 @@ void writeConfig() {
   } else {
     f.println("FALSE");
   }
-  f.print("WakeEveryN=");
-  f.println(config.wakeEveryN);
-  f.print("StayAwakeMins=");
-  f.println(config.stayAwakeMins);
-  f.print("ChimeEveryN=");
-  f.println(config.chimeEveryN);
+  f.print("WakeEveryNSeconds=");
+  f.println(config.wakeEveryNSeconds);
+  f.print("StayAwakeSeconds=");
+  f.println(config.stayAwakeSeconds);
+  f.print("ChimeEveryNSeconds=");
+  f.println(config.chimeEveryNSeconds);
   f.print("ChimeOffset=");
-  f.println(config.chimeOffset);
-  f.print("InterChimeDelay=");
-  f.println(config.interChimeDelay);
+  f.println(config.chimeOffsetSeconds);
+  f.print("InterChimeDelaySeconds=");
+  f.println(config.interChimeDelaySeconds);
+  f.print("InterHourChimeDelaySeconds=");
+  f.println(config.interHourChimeDelaySeconds);
   f.print("ChimeStopTimeout=");
   f.println(config.chimeStopTimeout);
   f.print("HeartbeatEnabled=");
@@ -1100,15 +1138,29 @@ void rtcSetup() {
 }
 
 void calculateSleepAndChimeTiming() {
-  uint16_t secondsToStayAwake = config.stayAwakeMins * 60;
-  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryN);
-  uint16_t secondsTilNextChime = secondsTilNextN(config.chimeEveryN) + config.chimeOffset;
+  uint16_t secondsToStayAwake = config.stayAwakeSeconds;
+  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
+  uint16_t secondsTilNextChime;
+
+  switch (chimeState) {
+    case CHIME_INITIAL:
+      secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
+      break;
+    case CHIME_SECOND:
+    case CHIME_THIRD:
+      secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
+      break;
+    case CHIME_HOUR:
+      secondsTilNextChime = config.interHourChimeDelaySeconds;
+      break;
+  }
+
   RtcDateTime now = Rtc.GetDateTime();
   time_t nowTime = now.Epoch32Time();
   time_t wakeTime = nowTime + secondsTilNextWake;
   time_t chimeTime = nowTime + secondsTilNextChime;
   time_t nextSleepTime = wakeTime + secondsToStayAwake;
-  uint16_t secondsTilWakeAfterNext = secondsTilNextWake + (config.wakeEveryN * 60);
+  uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
   time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
 
@@ -1325,6 +1377,18 @@ void loop(void) {
         Serial.println("Timeout waiting for chime stop switch activation!");
       }
       stopChiming();
+      RtcDateTime now = Rtc.GetDateTime();
+      if (chimeState == CHIME_HOUR) {
+        chimeHoursRungOut++;
+        uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
+        if (chimeHoursRungOut >= twelveHour) {
+          chimeHoursRungOut = 0;
+          chimeState = CHIME_INITIAL;
+        }
+      } else {
+        // Advance to the next chime state.
+        chimeState = (chime_state_t)(((int)chimeState + 1) % NUM_CHIME_STATES);
+      }
       // Schedule next chime
       calculateSleepAndChimeTiming();
       setRtcAlarms();
