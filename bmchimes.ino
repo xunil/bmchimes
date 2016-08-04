@@ -1138,31 +1138,38 @@ void rtcSetup() {
 }
 
 void calculateSleepAndChimeTiming() {
-  uint16_t secondsToStayAwake = config.stayAwakeSeconds;
-  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
-  uint16_t secondsTilNextChime;
-
-  switch (chimeState) {
-    case CHIME_INITIAL:
-      secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
-      break;
-    case CHIME_SECOND:
-    case CHIME_THIRD:
-      secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
-      break;
-    case CHIME_HOUR:
-      secondsTilNextChime = config.interHourChimeDelaySeconds;
-      break;
-  }
-
   RtcDateTime now = Rtc.GetDateTime();
   time_t nowTime = now.Epoch32Time();
+  uint16_t secondsToStayAwake = config.stayAwakeSeconds;
+  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
   time_t wakeTime = nowTime + secondsTilNextWake;
-  time_t chimeTime = nowTime + secondsTilNextChime;
   time_t nextSleepTime = wakeTime + secondsToStayAwake;
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
   time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
+
+  uint16_t secondsTilNextChime;
+  time_t lastChimeTime;
+  static time_t chimeTime;
+
+  switch (chimeState) {
+    case CHIME_INITIAL:
+      secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
+      lastChimeTime = nowTime;
+      break;
+    case CHIME_SECOND:
+    case CHIME_THIRD:
+      lastChimeTime = chimeTime;
+      secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
+      break;
+    case CHIME_HOUR:
+      lastChimeTime = chimeTime;
+      secondsTilNextChime = config.interHourChimeDelaySeconds;
+      break;
+  }
+
+  // Next chime begins some seconds into the future, minus however long the last chime took
+  chimeTime = nowTime + (secondsTilNextChime - (nowTime - lastChimeTime));
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
