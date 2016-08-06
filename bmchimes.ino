@@ -23,12 +23,12 @@ struct BMChimeConfig {
   WiFiMode wiFiMode;
   bool connectWiFiAtReset;
   bool sleepEnabled;
-  uint8_t wakeEveryNSeconds;
-  uint8_t stayAwakeSeconds;
-  uint8_t chimeEveryNSeconds; 
-  uint8_t chimeOffsetSeconds; 
-  uint8_t interChimeDelaySeconds; 
-  uint8_t interHourChimeDelaySeconds; 
+  uint16_t wakeEveryNSeconds;
+  uint16_t stayAwakeSeconds;
+  uint16_t chimeEveryNSeconds; 
+  uint16_t chimeOffsetSeconds; 
+  uint16_t interChimeDelaySeconds; 
+  uint16_t interHourChimeDelaySeconds; 
   uint16_t chimeStopTimeout; 
   bool heartbeatEnabled;
 } config;
@@ -52,8 +52,11 @@ bool chiming = false;
 enum chime_state_t { CHIME_INITIAL = 0, CHIME_SECOND = 1, CHIME_THIRD = 2, CHIME_HOUR = 3 } chimeState = CHIME_INITIAL;
 uint8_t chimeHoursRungOut = 0;
 #define NUM_CHIME_STATES 4
-bool shouldCollectStats = false;
+#define MAX_CHIME_SCHEDULE 15
+#define INVALID_TIME 0xffffffff
+time_t chimeSchedule[MAX_CHIME_SCHEDULE];
 
+bool shouldCollectStats = false;
 volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
 
@@ -125,7 +128,7 @@ void getNtpDateTimeString(String& dateTimeBuf) {
   dateTimeStringFromRtcDateTime(systemRtcDateTime, dateTimeBuf);
 }
 
-uint16_t secondsTilNextN(uint8_t N) {
+uint16_t secondsTilNextN(uint16_t N) {
   // 16 bit return value should be sufficient; we will chime or wake at least once an hour.
   RtcDateTime now = Rtc.GetDateTime();
 
@@ -1137,39 +1140,16 @@ void rtcSetup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
-void calculateSleepAndChimeTiming() {
-  RtcDateTime now = Rtc.GetDateTime();
-  time_t nowTime = now.Epoch32Time();
+
+void calculateSleepTiming(RtcDateTime& now) {
   uint16_t secondsToStayAwake = config.stayAwakeSeconds;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
+  time_t nowTime = now.Epoch32Time();
   time_t wakeTime = nowTime + secondsTilNextWake;
   time_t nextSleepTime = wakeTime + secondsToStayAwake;
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
   time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
-
-  uint16_t secondsTilNextChime;
-  time_t lastChimeTime;
-  static time_t chimeTime;
-
-  switch (chimeState) {
-    case CHIME_INITIAL:
-      secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
-      lastChimeTime = nowTime;
-      break;
-    case CHIME_SECOND:
-    case CHIME_THIRD:
-      lastChimeTime = chimeTime;
-      secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
-      break;
-    case CHIME_HOUR:
-      lastChimeTime = chimeTime;
-      secondsTilNextChime = config.interHourChimeDelaySeconds;
-      break;
-  }
-
-  // Next chime begins some seconds into the future, minus however long the last chime took
-  chimeTime = nowTime + (secondsTilNextChime - (nowTime - lastChimeTime));
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
@@ -1177,14 +1157,89 @@ void calculateSleepAndChimeTiming() {
   wakeAlarmDateTime.InitWithEpoch32Time(wakeTime);
   sleepAlarmDateTime = RtcDateTime(nextSleepTime);
   sleepAlarmDateTime.InitWithEpoch32Time(nextSleepTime);
-  chimeAlarmDateTime = RtcDateTime(chimeTime);
-  chimeAlarmDateTime.InitWithEpoch32Time(chimeTime);
+}
 
+void scheduleChimeSequence(RtcDateTime& now) {
+  time_t nowTime = now.Epoch32Time();
+
+  // Clear any existing schedule.
+  memset(chimeSchedule, 0xff, sizeof(chimeSchedule));
+  uint16_t secondsTilNextChime;
+  time_t lastChimeTime;
+  static time_t chimeTime;
+  uint16_t scheduledHourChimes = 0;
+  uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
+  chime_state_t scheduleChimeState;
+  for ( int i = 0, scheduleChimeState = CHIME_INITIAL;
+        i < MAX_CHIME_SCHEDULE, scheduleChimeState <= CHIME_HOUR && scheduledHourChimes < twelveHour;
+        i++) {
+    switch (scheduleChimeState) {
+      case CHIME_INITIAL:
+        secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
+        chimeSchedule[i] = nowTime + secondsTilNextChime;
+        break;
+      case CHIME_SECOND:
+      case CHIME_THIRD:
+        secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
+        chimeSchedule[i] = chimeSchedule[i-1] + secondsTilNextChime;
+        break;
+      case CHIME_HOUR:
+        secondsTilNextChime = config.interHourChimeDelaySeconds;
+        chimeSchedule[i] = chimeSchedule[i-1] + secondsTilNextChime;
+        break;
+    }
+
+
+    if (scheduleChimeState == CHIME_HOUR) {
+      scheduledHourChimes++;
+    } else {
+      scheduleChimeState = (chime_state_t)(((int)scheduleChimeState + 1) % NUM_CHIME_STATES);
+    }
+  }
+
+  /* XXX 
   // Determine if the next chime will happen between the next sleep and the next wake
   if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
     // Chime will happen while we are asleep!  Skip the next sleep.
     sleepAlarmDateTime.InitWithEpoch32Time(sleepTimeAfterNext);
   }
+  */
+}
+
+void calculateSleepAndChimeTiming() {
+  RtcDateTime now = Rtc.GetDateTime();
+  calculateSleepTiming(now);
+  scheduleChimeSequence(now);
+  Serial.println("calculateSleepAndChimeTiming():");
+  dumpChimeSchedule();
+}
+
+void dumpChimeSchedule() {
+  Serial.println("Chime Schedule");
+  Serial.println("--------------------------------------");
+  for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
+    RtcDateTime scheduledChimeDateTime = RtcDateTime();
+    if (chimeSchedule[i] != 0xffffffff) {
+      scheduledChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
+      String scheduledChimeString;
+      dateTimeStringFromRtcDateTime(scheduledChimeDateTime, scheduledChimeString);
+      Serial.println(scheduledChimeString);
+    }
+  }
+  Serial.println("");
+}
+
+time_t getNextChimeTime(RtcDateTime& now) {
+  RtcDateTime candidateChimeDateTime = RtcDateTime();
+  for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
+    if (chimeSchedule[i] != INVALID_TIME) {
+      candidateChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
+      if (candidateChimeDateTime > now) {
+        return chimeSchedule[i];
+      }
+    }
+  }
+  return INVALID_TIME;
 }
 
 void setRtcAlarms() {
@@ -1192,6 +1247,11 @@ void setRtcAlarms() {
   // Sleep alarm isn't, can just run on the 00 second of a given minute
   // Other less-critical tasks such as stats collection are also seconds-insensitive,
   // can run on a once-a-minute basis.
+  RtcDateTime now = Rtc.GetDateTime();
+  chimeAlarmDateTime = RtcDateTime();
+  time_t nextChimeTime = getNextChimeTime(now);
+  chimeAlarmDateTime.InitWithEpoch32Time(nextChimeTime);
+
   String nowString;
   getRtcDateTimeString(nowString);
   String sleepAlarmDateTimeString;
@@ -1237,6 +1297,15 @@ void setRtcAlarms() {
   attachInterrupt(digitalPinToInterrupt(rtcAlarmPin), alarmISR, FALLING);
 }
 
+void scheduleNextChime(RtcDateTime& now) {
+  // Schedule next chime
+  if (getNextChimeTime(now) == INVALID_TIME) {
+    Serial.println("No valid next chime time found.  Recalculating chime schedule...");
+    calculateSleepAndChimeTiming();
+  }
+  setRtcAlarms();
+}
+
 void clearRtcAlarms() {
   DS3231AlarmOne alarmOne = DS3231AlarmOne(0, 0, 0, 61,
     DS3231AlarmOneControl_HoursMinutesSecondsDayOfMonthMatch
@@ -1255,6 +1324,7 @@ void chimeSetup() {
   digitalWrite(chimePin, LOW);
   pinMode(chimeStopSwitchPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(chimeStopSwitchPin), chimeStopSwitchISR, FALLING);
+  chimeState = CHIME_INITIAL;
 }
 
 void heartbeatSetup() {
@@ -1370,6 +1440,9 @@ void loop(void) {
       if (now.Minute() % statsInterval == 0) {
         shouldCollectStats = true;
       }
+
+      // Update chime schedule
+      scheduleNextChime(now);
     }
   }
 
@@ -1396,9 +1469,7 @@ void loop(void) {
         // Advance to the next chime state.
         chimeState = (chime_state_t)(((int)chimeState + 1) % NUM_CHIME_STATES);
       }
-      // Schedule next chime
-      calculateSleepAndChimeTiming();
-      setRtcAlarms();
+      scheduleNextChime(now);
     }
   } else {
     if (shouldCollectStats) {
