@@ -6,7 +6,7 @@
 #include "FS.h"
 #include <RtcDS3231.h>
 #include <pgmspace.h>
-#include "StringStream.h"
+#include "TeeSerial.h"
 
 const int heartbeatPin = 2;
 const int rtcAlarmPin = 13;
@@ -81,14 +81,14 @@ void printStringAsHexDump(String str) {
   char buf[64];
   str.toCharArray(buf, 64);
   for (int i = 0; i < str.length(); i++) {
-    Serial.print(buf[i], HEX);
-    Serial.print(" ");
+    TeeSerial0.print(buf[i], HEX);
+    TeeSerial0.print(" ");
   }
 }
 
 void printlnStringAsHexDump(String str) {
   printStringAsHexDump(str);
-  Serial.println("");
+  TeeSerial0.println("");
 }
 
 void dateTimeStringFromRtcDateTime(RtcDateTime rtcDateTime, String& dateTimeBuf) {
@@ -160,27 +160,27 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
-  Serial.print("Chime state is ");
+  TeeSerial0.print("Chime state is ");
   switch (chimeState) {
     case CHIME_INITIAL:
-      Serial.println("INITIAL");
+      TeeSerial0.println("INITIAL");
       break;
     case CHIME_SECOND:
-      Serial.println("SECOND");
+      TeeSerial0.println("SECOND");
       break;
     case CHIME_THIRD:
-      Serial.println("THIRD");
+      TeeSerial0.println("THIRD");
       break;
     case CHIME_HOUR:
-      Serial.print("HOUR (");
-      Serial.print(chimeHoursRungOut);
-      Serial.println(" hours rung out)");
+      TeeSerial0.print("HOUR (");
+      TeeSerial0.print(chimeHoursRungOut);
+      TeeSerial0.println(" hours rung out)");
       break;
     default:
-      Serial.println("UNKNOWN");
+      TeeSerial0.println("UNKNOWN");
   }
 
-  Serial.println("Chiming!");
+  TeeSerial0.println("Chiming!");
   // Set a flag indicating chiming has begun
   chiming = true;
   chimeStopSwitchFlag = false;
@@ -267,6 +267,14 @@ void handleRoot() {
     message += WiFi.SSID();
     message += "<br/>\n";
   }
+
+  String debugLog;
+  TeeSerial0.getBuffer(debugLog);
+  message += "<h4>Debug Log</h4>\n";
+  message += "<pre>\n";
+  message += debugLog;
+  message += "</pre>\n";
+
   message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
   message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
   message += "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
@@ -363,121 +371,121 @@ void handleConfig() {
     for (uint8_t i = 0; i < server.args(); i++) {
       String argName = String(server.argName(i));
       String argValue = String(server.arg(i));
-      Serial.print("handleConfig(): argName = ");
-      Serial.print(argName);
-      Serial.print("; argValue = ");
-      Serial.println(argValue);
+      TeeSerial0.print("handleConfig(): argName = ");
+      TeeSerial0.print(argName);
+      TeeSerial0.print("; argValue = ");
+      TeeSerial0.println(argValue);
 
       if (argName == "DeviceDescription") {
-        Serial.print("Setting Device Description ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting Device Description ");
+        TeeSerial0.println(argValue);
         config.deviceDescription = argValue;
       } else if (argName == "WiFiSSID") {
-        Serial.print("Setting WiFi SSID ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting WiFi SSID ");
+        TeeSerial0.println(argValue);
         config.wiFiSSID = argValue;
       } else if (argName == "WiFiPassword") {
-        Serial.print("Setting WiFi password ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting WiFi password ");
+        TeeSerial0.println(argValue);
         config.wiFiPassword = argValue;
       } else if (argName == "WiFiMode") {
         // Either Station or AP
-        Serial.print("Setting WiFi mode ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting WiFi mode ");
+        TeeSerial0.println(argValue);
         argValue.toUpperCase();
         if (argValue == "AP") {
           config.wiFiMode = WIFI_AP;
         } else if (argValue == "STATION") {
           config.wiFiMode = WIFI_STA;
         } else {
-          Serial.print("Unknown WiFi mode ");
-          Serial.print(argValue);
-          Serial.println("; defaulting to STATION");
+          TeeSerial0.print("Unknown WiFi mode ");
+          TeeSerial0.print(argValue);
+          TeeSerial0.println("; defaulting to STATION");
           config.wiFiMode = WIFI_STA;
         }
       } else if (argName == "ConnectWiFiAtReset") {
         // true or false
-        Serial.print("Setting connect WiFi at reset flag to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting connect WiFi at reset flag to ");
+        TeeSerial0.println(argValue);
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.connectWiFiAtReset = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.connectWiFiAtReset = false;
         } else {
-          Serial.print("Unknown boolean value ");
-          Serial.print(argValue);
-          Serial.println("; defaulting to TRUE");
+          TeeSerial0.print("Unknown boolean value ");
+          TeeSerial0.print(argValue);
+          TeeSerial0.println("; defaulting to TRUE");
           config.connectWiFiAtReset = true;
         }
       } else if (argName == "SleepEnabled") {
         // true or false
-        Serial.print("Setting sleep enabled flag to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting sleep enabled flag to ");
+        TeeSerial0.println(argValue);
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.sleepEnabled = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.sleepEnabled = false;
         } else {
-          Serial.print("Unknown boolean value ");
-          Serial.print(argValue);
-          Serial.println("; defaulting to TRUE");
+          TeeSerial0.print("Unknown boolean value ");
+          TeeSerial0.print(argValue);
+          TeeSerial0.println("; defaulting to TRUE");
           config.sleepEnabled = true;
         }
       } else if (argName == "WakeEveryNSeconds") {
-        Serial.print("Setting wake every N to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting wake every N to ");
+        TeeSerial0.println(argValue);
         config.wakeEveryNSeconds = argValue.toInt();
       } else if (argName == "StayAwakeSeconds") {
-        Serial.print("Setting stay awake time to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting stay awake time to ");
+        TeeSerial0.println(argValue);
         config.stayAwakeSeconds = argValue.toInt();
       } else if (argName == "ChimeEveryNSeconds") {
-        Serial.print("Setting chime every N to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting chime every N to ");
+        TeeSerial0.println(argValue);
         config.chimeEveryNSeconds = argValue.toInt();
       } else if (argName == "ChimeOffset") {
-        Serial.print("Setting chime offset to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting chime offset to ");
+        TeeSerial0.println(argValue);
         config.chimeOffsetSeconds = argValue.toInt();
       } else if (argName == "InterChimeDelaySeconds") {
-        Serial.print("Setting inter-chime delay to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting inter-chime delay to ");
+        TeeSerial0.println(argValue);
         config.interChimeDelaySeconds = argValue.toInt();
       } else if (argName == "InterHourChimeDelaySeconds") {
-        Serial.print("Setting inter-hour-chime delay to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting inter-hour-chime delay to ");
+        TeeSerial0.println(argValue);
         config.interHourChimeDelaySeconds = argValue.toInt();
       } else if (argName == "ChimeStopTimeout") {
         if (argValue.toInt() > 65535) {
-          Serial.print("Value ");
-          Serial.print(argValue);
-          Serial.println(" larger than maximum 65535. Limiting to 65535.");
+          TeeSerial0.print("Value ");
+          TeeSerial0.print(argValue);
+          TeeSerial0.println(" larger than maximum 65535. Limiting to 65535.");
           config.chimeStopTimeout = 65535;
         } else {
-          Serial.print("Setting chime stop timeout to ");
-          Serial.println(argValue);
+          TeeSerial0.print("Setting chime stop timeout to ");
+          TeeSerial0.println(argValue);
           config.chimeStopTimeout = argValue.toInt();
         }
       } else if (argName == "HeartbeatEnabled") {
         // true or false
-        Serial.print("Setting heartbeat enabled flag to ");
-        Serial.println(argValue);
+        TeeSerial0.print("Setting heartbeat enabled flag to ");
+        TeeSerial0.println(argValue);
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.heartbeatEnabled = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.heartbeatEnabled = false;
         } else {
-          Serial.print("Unknown boolean value ");
-          Serial.print(argValue);
-          Serial.println("; defaulting to TRUE");
+          TeeSerial0.print("Unknown boolean value ");
+          TeeSerial0.print(argValue);
+          TeeSerial0.println("; defaulting to TRUE");
           config.heartbeatEnabled = true;
         }
       } else {
-        Serial.print("Unknown configuration key ");
-        Serial.println(argName);
+        TeeSerial0.print("Unknown configuration key ");
+        TeeSerial0.println(argName);
       }
     }
 
@@ -582,7 +590,7 @@ void handleStats() {
   } else {
     File stats = SPIFFS.open("/statistics.csv", "r");
     if (!stats) {
-        Serial.println("handleStats: file open failed while opening /statistics.csv");
+        TeeSerial0.println("handleStats: file open failed while opening /statistics.csv");
         message += "<h2>No statistics collected yet.</h2>\n";
     } else {
       message += "<table border=1 cellpadding=1 cellspacing=0>";
@@ -667,41 +675,41 @@ void dumpSPIFFSInfo() {
   FSInfo fs_info;
   SPIFFS.info(fs_info);
 
-  Serial.println("Filesystem info");
-  Serial.print("Total bytes: ");
-  Serial.println(fs_info.totalBytes);
-  Serial.print("Used bytes: ");
-  Serial.println(fs_info.usedBytes);
-  Serial.print("Block size: ");
-  Serial.println(fs_info.blockSize);
-  Serial.print("Page size: ");
-  Serial.println(fs_info.pageSize);
-  Serial.print("Max open files: ");
-  Serial.println(fs_info.maxOpenFiles);
-  Serial.print("Max path length: ");
-  Serial.println(fs_info.maxPathLength);
-  Serial.println("");
-  Serial.flush();
+  TeeSerial0.println("Filesystem info");
+  TeeSerial0.print("Total bytes: ");
+  TeeSerial0.println(fs_info.totalBytes);
+  TeeSerial0.print("Used bytes: ");
+  TeeSerial0.println(fs_info.usedBytes);
+  TeeSerial0.print("Block size: ");
+  TeeSerial0.println(fs_info.blockSize);
+  TeeSerial0.print("Page size: ");
+  TeeSerial0.println(fs_info.pageSize);
+  TeeSerial0.print("Max open files: ");
+  TeeSerial0.println(fs_info.maxOpenFiles);
+  TeeSerial0.print("Max path length: ");
+  TeeSerial0.println(fs_info.maxPathLength);
+  TeeSerial0.println("");
+  TeeSerial0.flush();
 
-  Serial.println("Directory listing of /");
+  TeeSerial0.println("Directory listing of /");
   Dir dir = SPIFFS.openDir("/");
   while (dir.next()) {
-    Serial.print("  ");
-    Serial.println(dir.fileName());
+    TeeSerial0.print("  ");
+    TeeSerial0.println(dir.fileName());
   }
-  Serial.flush();
+  TeeSerial0.flush();
 }
 
 // Setup functions
 void setupSPIFFS() {
-  Serial.println("Starting SPIFFS");
+  TeeSerial0.println("Starting SPIFFS");
   if (SPIFFS.begin()) {
-    Serial.println("SPIFFS initialized");
+    TeeSerial0.println("SPIFFS initialized");
   } else {
-    Serial.println("SPIFFS initialization failed!");
+    TeeSerial0.println("SPIFFS initialization failed!");
     return;
   }
-  Serial.flush();
+  TeeSerial0.flush();
 }
 
 void setConfigDefaults() {
@@ -737,7 +745,7 @@ void setConfigDefaults() {
 bool readConfigToString(String& configFileText) {
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
-      Serial.println("readConfigToString: file open failed");
+      TeeSerial0.println("readConfigToString: file open failed");
       return false;
   }
   while (f.available()) {
@@ -750,17 +758,17 @@ bool readConfigToString(String& configFileText) {
 bool readConfigFile() {
   bool result = false;
 
-  Serial.println("Opening config file");
+  TeeSerial0.println("Opening config file");
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
-      Serial.println("readConfig: file open failed");
+      TeeSerial0.println("readConfig: file open failed");
       return false;
   }
-  Serial.flush();
-  Serial.println("Beginning read of config file");
-  Serial.flush();
+  TeeSerial0.flush();
+  TeeSerial0.println("Beginning read of config file");
+  TeeSerial0.flush();
   result = readConfigFromStream(f);
-  Serial.println("Closing config file");
+  TeeSerial0.println("Closing config file");
   f.close();
   return result;
 }
@@ -769,184 +777,184 @@ bool readConfigFromStream(Stream& s) {
   int loops = 0;
   while (loops < 50 && s.available()) {
     yield();
-    Serial.flush();
+    TeeSerial0.flush();
     String key = s.readStringUntil('=');
     key.trim();
 #ifdef DEBUG
-    Serial.print("Read key ");
-    Serial.print(key);
-    Serial.print("; hex: ");
+    TeeSerial0.print("Read key ");
+    TeeSerial0.print(key);
+    TeeSerial0.print("; hex: ");
     printStringAsHexDump(key);
-    Serial.println("");
+    TeeSerial0.println("");
 #endif
 
     String value = s.readStringUntil('\n');
     value.trim();
 #ifdef DEBUG
-    Serial.print("Read value ");
-    Serial.print(value);
-    Serial.print("; hex: ");
+    TeeSerial0.print("Read value ");
+    TeeSerial0.print(value);
+    TeeSerial0.print("; hex: ");
     printStringAsHexDump(value);
-    Serial.println("");
+    TeeSerial0.println("");
 #endif
 
-    Serial.flush();
+    TeeSerial0.flush();
     if (key == "DeviceDescription") {
-      Serial.print("Setting Device Description ");
-      Serial.println(value);
+      TeeSerial0.print("Setting Device Description ");
+      TeeSerial0.println(value);
       config.deviceDescription = value;
     } else if (key == "WiFiSSID") {
-      Serial.print("Setting WiFi SSID ");
-      Serial.println(value);
-      Serial.print(" (");
+      TeeSerial0.print("Setting WiFi SSID ");
+      TeeSerial0.println(value);
+      TeeSerial0.print(" (");
       printStringAsHexDump(value);
-      Serial.println(")");
+      TeeSerial0.println(")");
       config.wiFiSSID = value;
     } else if (key == "WiFiPassword") {
-      Serial.print("Setting WiFi password ");
-      Serial.println(value);
-      Serial.print(" (");
+      TeeSerial0.print("Setting WiFi password ");
+      TeeSerial0.println(value);
+      TeeSerial0.print(" (");
       printStringAsHexDump(value);
-      Serial.println(")");
+      TeeSerial0.println(")");
       config.wiFiPassword = value;
     } else if (key == "WiFiMode") {
       // Either Station or AP
-      Serial.print("Setting WiFi mode ");
-      Serial.println(value);
+      TeeSerial0.print("Setting WiFi mode ");
+      TeeSerial0.println(value);
       value.toUpperCase();
       if (value == "AP") {
         config.wiFiMode = WIFI_AP;
       } else if (value == "STATION") {
         config.wiFiMode = WIFI_STA;
       } else {
-        Serial.print("Unknown WiFi mode ");
-        Serial.print(value);
-        Serial.println("; defaulting to STATION");
+        TeeSerial0.print("Unknown WiFi mode ");
+        TeeSerial0.print(value);
+        TeeSerial0.println("; defaulting to STATION");
         config.wiFiMode = WIFI_STA;
       }
     } else if (key == "ConnectWiFiAtReset") {
       // true or false
-      Serial.print("Setting connect WiFi at reset flag to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting connect WiFi at reset flag to ");
+      TeeSerial0.println(value);
       value.toUpperCase();
       if (value == "TRUE") {
         config.connectWiFiAtReset = true;
       } else if (value == "FALSE") {
         config.connectWiFiAtReset = false;
       } else {
-        Serial.print("Unknown boolean value ");
-        Serial.print(value);
-        Serial.println("; defaulting to TRUE");
+        TeeSerial0.print("Unknown boolean value ");
+        TeeSerial0.print(value);
+        TeeSerial0.println("; defaulting to TRUE");
         config.connectWiFiAtReset = true;
       }
     } else if (key == "SleepEnabled") {
       // true or false
-      Serial.print("Setting sleep enabled flag to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting sleep enabled flag to ");
+      TeeSerial0.println(value);
       value.toUpperCase();
       if (value == "TRUE") {
         config.sleepEnabled = true;
       } else if (value == "FALSE") {
         config.sleepEnabled = false;
       } else {
-        Serial.print("Unknown boolean value ");
-        Serial.print(value);
-        Serial.println("; defaulting to TRUE");
+        TeeSerial0.print("Unknown boolean value ");
+        TeeSerial0.print(value);
+        TeeSerial0.println("; defaulting to TRUE");
         config.sleepEnabled = true;
       }
     } else if (key == "WakeEveryNSeconds") {
-      Serial.print("Setting wake every N seconds to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting wake every N seconds to ");
+      TeeSerial0.println(value);
       config.wakeEveryNSeconds = value.toInt();
     } else if (key == "StayAwakeSeconds") {
-      Serial.print("Setting stay awake seconds to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting stay awake seconds to ");
+      TeeSerial0.println(value);
       config.stayAwakeSeconds = value.toInt();
     } else if (key == "ChimeEveryNSeconds") {
-      Serial.print("Setting chime every N seconds to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting chime every N seconds to ");
+      TeeSerial0.println(value);
       config.chimeEveryNSeconds = value.toInt();
     } else if (key == "ChimeOffset") {
-      Serial.print("Setting chime offset to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting chime offset to ");
+      TeeSerial0.println(value);
       config.chimeOffsetSeconds = value.toInt();
     } else if (key == "InterChimeDelaySeconds") {
-      Serial.print("Setting inter-chime delay to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting inter-chime delay to ");
+      TeeSerial0.println(value);
       config.interChimeDelaySeconds = value.toInt();
     } else if (key == "InterHourChimeDelaySeconds") {
-      Serial.print("Setting inter-hour-chime delay to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting inter-hour-chime delay to ");
+      TeeSerial0.println(value);
       config.interHourChimeDelaySeconds = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
-        Serial.print("Value ");
-        Serial.print(value);
-        Serial.print(" larger than maximum 65535. Limiting to 65535.");
+        TeeSerial0.print("Value ");
+        TeeSerial0.print(value);
+        TeeSerial0.print(" larger than maximum 65535. Limiting to 65535.");
         config.chimeStopTimeout = 65535;
       } else {
-        Serial.print("Setting chime stop timeout to ");
-        Serial.println(value);
+        TeeSerial0.print("Setting chime stop timeout to ");
+        TeeSerial0.println(value);
         config.chimeStopTimeout = value.toInt();
       }
     } else if (key == "HeartbeatEnabled") {
       // true or false
-      Serial.print("Setting heartbeat enabled flag to ");
-      Serial.println(value);
+      TeeSerial0.print("Setting heartbeat enabled flag to ");
+      TeeSerial0.println(value);
       value.toUpperCase();
       if (value == "TRUE") {
         config.heartbeatEnabled = true;
       } else if (value == "FALSE") {
         config.heartbeatEnabled = false;
       } else {
-        Serial.print("Unknown boolean value ");
-        Serial.print(value);
-        Serial.println("; defaulting to TRUE");
+        TeeSerial0.print("Unknown boolean value ");
+        TeeSerial0.print(value);
+        TeeSerial0.println("; defaulting to TRUE");
         config.heartbeatEnabled = true;
       }
     } else {
-      Serial.print("Unknown configuration key ");
-      Serial.println(key);
+      TeeSerial0.print("Unknown configuration key ");
+      TeeSerial0.println(key);
     }
     loops++;
   }
-  Serial.println("Config read complete");
+  TeeSerial0.println("Config read complete");
   return true;
 }
 
 void writeConfig() {
-  Serial.println("writeConfig: Opening /bmchimes.cfg for writing");
+  TeeSerial0.println("writeConfig: Opening /bmchimes.cfg for writing");
   File f = SPIFFS.open("/bmchimes.cfg", "w");
   if (!f) {
-      Serial.println("writeConfig: file open failed");
+      TeeSerial0.println("writeConfig: file open failed");
       return;
   }
-  Serial.println("File successfully opened");
+  TeeSerial0.println("File successfully opened");
 
   config.deviceDescription.trim();
-  Serial.print("Writing device description: ");
-  Serial.print(config.deviceDescription);
-  Serial.print("; hex: ");
+  TeeSerial0.print("Writing device description: ");
+  TeeSerial0.print(config.deviceDescription);
+  TeeSerial0.print("; hex: ");
   printStringAsHexDump(config.deviceDescription);
-  Serial.println("");
+  TeeSerial0.println("");
   f.print("DeviceDescription=");
   f.println(config.deviceDescription);
 
   config.wiFiSSID.trim();
-  Serial.print("Writing WiFiSSID: ");
-  Serial.print(config.wiFiSSID);
-  Serial.print("; hex: ");
+  TeeSerial0.print("Writing WiFiSSID: ");
+  TeeSerial0.print(config.wiFiSSID);
+  TeeSerial0.print("; hex: ");
   printStringAsHexDump(config.wiFiSSID);
-  Serial.println("");
+  TeeSerial0.println("");
   f.print("WiFiSSID=");
   f.println(config.wiFiSSID);
 
   config.wiFiPassword.trim();
-  Serial.print("Writing WiFiPassword: ");
-  Serial.print(config.wiFiPassword);
-  Serial.print("; hex: ");
+  TeeSerial0.print("Writing WiFiPassword: ");
+  TeeSerial0.print(config.wiFiPassword);
+  TeeSerial0.print("; hex: ");
   printStringAsHexDump(config.wiFiPassword);
-  Serial.println("");
+  TeeSerial0.println("");
   f.print("WiFiPassword=");
   f.println(config.wiFiPassword);
 
@@ -1009,12 +1017,12 @@ void collectStats() {
   SPIFFS.rename("/statistics.csv", "/statistics.csv.old");
   File oldStats = SPIFFS.open("/statistics.csv.old", "r");
   if (!oldStats) {
-      Serial.println("collectStats: file open failed while opening /statistics.csv.old");
+      TeeSerial0.println("collectStats: file open failed while opening /statistics.csv.old");
       // Probably our first run. OK to keep going.
   }
   File stats = SPIFFS.open("/statistics.csv", "w");
   if (!stats) {
-      Serial.println("collectStats: file open failed while opening /statistics.csv");
+      TeeSerial0.println("collectStats: file open failed while opening /statistics.csv");
       return;
   }
 
@@ -1054,21 +1062,21 @@ void collectStats() {
 }
 
 void syncNTPTime() {
-  Serial.println("Fetching time from NTP servers");
+  TeeSerial0.println("Fetching time from NTP servers");
   // Pacific time zone hard coded
   configTime(-(7 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
   // Wait up to a minute for NTP sync
   uint8_t attempts = 0;
   while (attempts <= 120 && !time(nullptr)) {
-    Serial.print(".");
+    TeeSerial0.print(".");
     delay(500);
     attempts++;
   }
-  Serial.println("");
+  TeeSerial0.println("");
   if (!time(nullptr)) {
-    Serial.println("Failed to sync time with NTP servers!");
+    TeeSerial0.println("Failed to sync time with NTP servers!");
   } else {
-    Serial.println("Successfully synced time with NTP servers.");
+    TeeSerial0.println("Successfully synced time with NTP servers.");
   }
 }
 
@@ -1086,43 +1094,43 @@ void connectToWiFi() {
     uint8_t attempts = 0; 
     while (attempts <= 120 && WiFi.status() != WL_CONNECTED) {
       delay(500);
-      Serial.print(".");
+      TeeSerial0.print(".");
       attempts++;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("");
-      Serial.print("Connected to ");
-      Serial.println(config.wiFiSSID);
-      Serial.print("IP address: ");
-      Serial.println(WiFi.localIP());
+      TeeSerial0.println("");
+      TeeSerial0.print("Connected to ");
+      TeeSerial0.println(config.wiFiSSID);
+      TeeSerial0.print("IP address: ");
+      TeeSerial0.println(WiFi.localIP());
     } else {
-      Serial.println("");
-      Serial.print("Unable to connect to ");
-      Serial.print(config.wiFiSSID);
-      Serial.println(" network.  Giving up.");
+      TeeSerial0.println("");
+      TeeSerial0.print("Unable to connect to ");
+      TeeSerial0.print(config.wiFiSSID);
+      TeeSerial0.println(" network.  Giving up.");
     }
   } else if (config.wiFiMode == WIFI_AP) {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
-    Serial.print("Starting WiFi network named ");
-    Serial.print(config.wiFiSSID);
-    Serial.print("...");
-    Serial.flush();
+    TeeSerial0.print("Starting WiFi network named ");
+    TeeSerial0.print(config.wiFiSSID);
+    TeeSerial0.print("...");
+    TeeSerial0.flush();
     if (config.wiFiPassword.length() > 0) {
       WiFi.softAP(ssid, password);
     } else {
       WiFi.softAP(ssid);
     }
 
-    Serial.println("done.");
-    Serial.print("My IP address is ");
-    Serial.println(WiFi.softAPIP());
+    TeeSerial0.println("done.");
+    TeeSerial0.print("My IP address is ");
+    TeeSerial0.println(WiFi.softAPIP());
   }
 }
 
 void writeNtpTimeToRtc() {
-  Serial.println("Setting RTC time from NTP time");
+  TeeSerial0.println("Setting RTC time from NTP time");
   time_t now = time(nullptr);
   RtcDateTime ntpDateTime = RtcDateTime();
   ntpDateTime.InitWithEpoch32Time(now);
@@ -1133,7 +1141,7 @@ void writeNtpTimeToRtc() {
 void rtcSetup() {
   Rtc.Begin();
   if (!Rtc.GetIsRunning()) {
-    Serial.println("RTC was not actively running, starting now");
+    TeeSerial0.println("RTC was not actively running, starting now");
     Rtc.SetIsRunning(true);
   }
   Rtc.Enable32kHzPin(false);
@@ -1210,23 +1218,23 @@ void calculateSleepAndChimeTiming() {
   RtcDateTime now = Rtc.GetDateTime();
   calculateSleepTiming(now);
   scheduleChimeSequence(now);
-  Serial.println("calculateSleepAndChimeTiming():");
+  TeeSerial0.println("calculateSleepAndChimeTiming():");
   dumpChimeSchedule();
 }
 
 void dumpChimeSchedule() {
-  Serial.println("Chime Schedule");
-  Serial.println("--------------------------------------");
+  TeeSerial0.println("Chime Schedule");
+  TeeSerial0.println("--------------------------------------");
   for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
     RtcDateTime scheduledChimeDateTime = RtcDateTime();
     if (chimeSchedule[i] != 0xffffffff) {
       scheduledChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
       String scheduledChimeString;
       dateTimeStringFromRtcDateTime(scheduledChimeDateTime, scheduledChimeString);
-      Serial.println(scheduledChimeString);
+      TeeSerial0.println(scheduledChimeString);
     }
   }
-  Serial.println("");
+  TeeSerial0.println("");
 }
 
 time_t getNextChimeTime(RtcDateTime& now) {
@@ -1259,8 +1267,8 @@ void setRtcAlarms() {
   String chimeAlarmDateTimeString;
   dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
-  Serial.print("Time is now ");
-  Serial.println(nowString);
+  TeeSerial0.print("Time is now ");
+  TeeSerial0.println(nowString);
 
   // Alarm one is the chime alarm
   DS3231AlarmOne alarmOne = DS3231AlarmOne(
@@ -1272,9 +1280,9 @@ void setRtcAlarms() {
   );
   
   Rtc.SetAlarmOne(alarmOne);
-  Serial.print("Chime scheduled for ");
-  Serial.println(chimeAlarmDateTimeString);
-  Serial.flush();
+  TeeSerial0.print("Chime scheduled for ");
+  TeeSerial0.println(chimeAlarmDateTimeString);
+  TeeSerial0.flush();
 
   // Alarm two is the once-per-minute alarm
   DS3231AlarmTwo alarmTwo = DS3231AlarmTwo(
@@ -1286,11 +1294,11 @@ void setRtcAlarms() {
   
   Rtc.SetAlarmTwo(alarmTwo);
   if (config.sleepEnabled) {
-    Serial.print("sleepDuration = ");
-    Serial.println(sleepDuration);
-    Serial.print("Sleep scheduled for ");
-    Serial.println(sleepAlarmDateTimeString);
-    Serial.flush();
+    TeeSerial0.print("sleepDuration = ");
+    TeeSerial0.println(sleepDuration);
+    TeeSerial0.print("Sleep scheduled for ");
+    TeeSerial0.println(sleepAlarmDateTimeString);
+    TeeSerial0.flush();
   }
   
   Rtc.LatchAlarmsTriggeredFlags();
@@ -1300,7 +1308,7 @@ void setRtcAlarms() {
 void scheduleNextChime(RtcDateTime& now) {
   // Schedule next chime
   if (getNextChimeTime(now) == INVALID_TIME) {
-    Serial.println("No valid next chime time found.  Recalculating chime schedule...");
+    TeeSerial0.println("No valid next chime time found.  Recalculating chime schedule...");
     calculateSleepAndChimeTiming();
   }
   setRtcAlarms();
@@ -1334,8 +1342,8 @@ void heartbeatSetup() {
 
 void basicSetup() {
   pinMode(rtcAlarmPin, INPUT);
-  Serial.begin(74880);
-  Serial.println("");
+  TeeSerial0.begin(74880);
+  TeeSerial0.println("");
   Wire.begin();
 }
 
@@ -1360,14 +1368,14 @@ void startWebServer() {
 
   // Start the web server
   server.begin();
-  Serial.println("HTTP server started");
+  TeeSerial0.println("HTTP server started");
 }
 
 void setup(void) {
   basicSetup();
   setupSPIFFS();
   if (!readConfigFile()) {
-    Serial.println("Config read failed, setting defaults");
+    TeeSerial0.println("Config read failed, setting defaults");
     setConfigDefaults();
     writeConfig();
     readConfigFile();
@@ -1401,15 +1409,15 @@ void loop(void) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
       // Chime alarm fired
-      Serial.println("Chime alarm fired!");
+      TeeSerial0.println("Chime alarm fired!");
       dateTimeStringFromRtcDateTime(now, nowString);
-      Serial.print("Time is now ");
-      Serial.println(nowString);
+      TeeSerial0.print("Time is now ");
+      TeeSerial0.println(nowString);
       if (!chiming) {
         startChiming();
       } else {
         // Hopefully we only get here if someone has triggered a manual chime.
-        Serial.println("Chiming already in progress, skipping scheduled chime.");
+        TeeSerial0.println("Chiming already in progress, skipping scheduled chime.");
       }
     }
 
@@ -1421,15 +1429,15 @@ void loop(void) {
             && sleepAlarmDateTime.Second() == now.Second()) {
         // sleep now
         dateTimeStringFromRtcDateTime(now, nowString);
-        Serial.print("Time is now ");
-        Serial.println(nowString);
+        TeeSerial0.print("Time is now ");
+        TeeSerial0.println(nowString);
         if (sleepDuration == 0) {
           // Sanity check; if we sleep for 0 seconds, the ESP never wakes up.
-          Serial.println("Sleep duration is zero, skipping sleep.");
+          TeeSerial0.println("Sleep duration is zero, skipping sleep.");
         } else {
-          Serial.print("Sleeping for ");
-          Serial.print(sleepDuration);
-          Serial.println(" seconds");
+          TeeSerial0.print("Sleeping for ");
+          TeeSerial0.print(sleepDuration);
+          TeeSerial0.println(" seconds");
           // deepSleep expects a number in microseconds
           ESP.deepSleep(sleepDuration * 1e6);
         }
@@ -1452,9 +1460,9 @@ void loop(void) {
     if (chimeStopSwitchFlag || (millis() - chimeStartMillis > config.chimeStopTimeout)) {
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
-        Serial.println("Chime stop switch activated, turning off chime motor");
+        TeeSerial0.println("Chime stop switch activated, turning off chime motor");
       } else {
-        Serial.println("Timeout waiting for chime stop switch activation!");
+        TeeSerial0.println("Timeout waiting for chime stop switch activation!");
       }
       stopChiming();
       RtcDateTime now = Rtc.GetDateTime();
