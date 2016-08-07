@@ -8,6 +8,9 @@
 #include <pgmspace.h>
 #include "TeeSerial.h"
 
+// Allows streaming output (<< syntax)
+template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; }
+
 const int heartbeatPin = 2;
 const int rtcAlarmPin = 13;
 const int chimePin = 12;
@@ -82,13 +85,13 @@ void printStringAsHexDump(String str) {
   str.toCharArray(buf, 64);
   for (int i = 0; i < str.length(); i++) {
     TeeSerial0.print(buf[i], HEX);
-    TeeSerial0.print(" ");
+    TeeSerial0 << " ";
   }
 }
 
 void printlnStringAsHexDump(String str) {
   printStringAsHexDump(str);
-  TeeSerial0.println("");
+  TeeSerial0 << "\n";
 }
 
 void dateTimeStringFromRtcDateTime(RtcDateTime rtcDateTime, String& dateTimeBuf) {
@@ -160,27 +163,26 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
-  TeeSerial0.print("Chime state is ");
+  TeeSerial0 << "Chime state is ";
   switch (chimeState) {
     case CHIME_INITIAL:
-      TeeSerial0.println("INITIAL");
+      TeeSerial0 << "INITIAL";
       break;
     case CHIME_SECOND:
-      TeeSerial0.println("SECOND");
+      TeeSerial0 << "SECOND";
       break;
     case CHIME_THIRD:
-      TeeSerial0.println("THIRD");
+      TeeSerial0 << "THIRD";
       break;
     case CHIME_HOUR:
-      TeeSerial0.print("HOUR (");
-      TeeSerial0.print(chimeHoursRungOut);
-      TeeSerial0.println(" hours rung out)");
+      TeeSerial0 << "HOUR (" << chimeHoursRungOut << " hours rung out)";
       break;
     default:
-      TeeSerial0.println("UNKNOWN");
+      TeeSerial0 << "UNKNOWN";
   }
+  TeeSerial0 << "\n";
 
-  TeeSerial0.println("Chiming!");
+  TeeSerial0 << "Chiming!\n";
   // Set a flag indicating chiming has begun
   chiming = true;
   chimeStopSwitchFlag = false;
@@ -262,6 +264,9 @@ void handleRoot() {
   message += "Next chime scheduled at ";
   message += chimeAlarmDateTimeString;
   message += "<br/>\n";
+  message += "Free heap: ";
+  message += ESP.getFreeHeap();
+  message += " bytes<br/>\n";
   if (WiFi.status() == WL_CONNECTED) {
     message += "Connected to WiFi network ";
     message += WiFi.SSID();
@@ -371,121 +376,92 @@ void handleConfig() {
     for (uint8_t i = 0; i < server.args(); i++) {
       String argName = String(server.argName(i));
       String argValue = String(server.arg(i));
-      TeeSerial0.print("handleConfig(): argName = ");
-      TeeSerial0.print(argName);
-      TeeSerial0.print("; argValue = ");
-      TeeSerial0.println(argValue);
+      TeeSerial0 << "handleConfig(): argName = " << argName << "; argValue = " << argValue << "\n";
 
       if (argName == "DeviceDescription") {
-        TeeSerial0.print("Setting Device Description ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting Device Description " << argValue << "\n";
         config.deviceDescription = argValue;
       } else if (argName == "WiFiSSID") {
-        TeeSerial0.print("Setting WiFi SSID ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting WiFi SSID " << argValue << "\n";
         config.wiFiSSID = argValue;
       } else if (argName == "WiFiPassword") {
-        TeeSerial0.print("Setting WiFi password ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting WiFi password " << argValue << "\n";
         config.wiFiPassword = argValue;
       } else if (argName == "WiFiMode") {
         // Either Station or AP
-        TeeSerial0.print("Setting WiFi mode ");
-        TeeSerial0.println(argValue);
-        argValue.toUpperCase();
-        if (argValue == "AP") {
+        TeeSerial0 << "Setting WiFi mode " << argValue << "\n";
+        argValue.toUpperCase(); if (argValue == "AP") {
           config.wiFiMode = WIFI_AP;
         } else if (argValue == "STATION") {
           config.wiFiMode = WIFI_STA;
         } else {
-          TeeSerial0.print("Unknown WiFi mode ");
-          TeeSerial0.print(argValue);
-          TeeSerial0.println("; defaulting to STATION");
+          TeeSerial0 << "Unknown WiFi mode " << argValue << "; defaulting to STATION\n";
           config.wiFiMode = WIFI_STA;
         }
       } else if (argName == "ConnectWiFiAtReset") {
         // true or false
-        TeeSerial0.print("Setting connect WiFi at reset flag to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting connect WiFi at reset flag to " << argValue << "\n";
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.connectWiFiAtReset = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.connectWiFiAtReset = false;
         } else {
-          TeeSerial0.print("Unknown boolean value ");
-          TeeSerial0.print(argValue);
-          TeeSerial0.println("; defaulting to TRUE");
+          TeeSerial0 << "Unknown boolean value " << argValue << "; defaulting to TRUE\n";
           config.connectWiFiAtReset = true;
         }
       } else if (argName == "SleepEnabled") {
         // true or false
-        TeeSerial0.print("Setting sleep enabled flag to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting sleep enabled flag to " << argValue << "\n";
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.sleepEnabled = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.sleepEnabled = false;
         } else {
-          TeeSerial0.print("Unknown boolean value ");
-          TeeSerial0.print(argValue);
-          TeeSerial0.println("; defaulting to TRUE");
+          TeeSerial0 << "Unknown boolean value " << argValue << "; defaulting to TRUE\n";
           config.sleepEnabled = true;
         }
       } else if (argName == "WakeEveryNSeconds") {
-        TeeSerial0.print("Setting wake every N to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting wake every N to " << argValue << "\n";
         config.wakeEveryNSeconds = argValue.toInt();
       } else if (argName == "StayAwakeSeconds") {
-        TeeSerial0.print("Setting stay awake time to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting stay awake time to " << argValue << "\n";
         config.stayAwakeSeconds = argValue.toInt();
       } else if (argName == "ChimeEveryNSeconds") {
-        TeeSerial0.print("Setting chime every N to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting chime every N to " << argValue << "\n";
         config.chimeEveryNSeconds = argValue.toInt();
       } else if (argName == "ChimeOffset") {
-        TeeSerial0.print("Setting chime offset to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting chime offset to " << argValue << "\n";
         config.chimeOffsetSeconds = argValue.toInt();
       } else if (argName == "InterChimeDelaySeconds") {
-        TeeSerial0.print("Setting inter-chime delay to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting inter-chime delay to " << argValue << "\n";
         config.interChimeDelaySeconds = argValue.toInt();
       } else if (argName == "InterHourChimeDelaySeconds") {
-        TeeSerial0.print("Setting inter-hour-chime delay to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting inter-hour-chime delay to " << argValue << "\n";
         config.interHourChimeDelaySeconds = argValue.toInt();
       } else if (argName == "ChimeStopTimeout") {
         if (argValue.toInt() > 65535) {
-          TeeSerial0.print("Value ");
-          TeeSerial0.print(argValue);
-          TeeSerial0.println(" larger than maximum 65535. Limiting to 65535.");
+          TeeSerial0 << "Value " << argValue << " larger than maximum 65535. Limiting to 65535.\n";
           config.chimeStopTimeout = 65535;
         } else {
-          TeeSerial0.print("Setting chime stop timeout to ");
-          TeeSerial0.println(argValue);
+          TeeSerial0 << "Setting chime stop timeout to " << argValue << "\n";
           config.chimeStopTimeout = argValue.toInt();
         }
       } else if (argName == "HeartbeatEnabled") {
         // true or false
-        TeeSerial0.print("Setting heartbeat enabled flag to ");
-        TeeSerial0.println(argValue);
+        TeeSerial0 << "Setting heartbeat enabled flag to " << argValue << "\n";
         argValue.toUpperCase();
         if (argValue == "TRUE" || argValue == "ON") {
           config.heartbeatEnabled = true;
         } else if (argValue == "FALSE" || argValue == "OFF") {
           config.heartbeatEnabled = false;
         } else {
-          TeeSerial0.print("Unknown boolean value ");
-          TeeSerial0.print(argValue);
-          TeeSerial0.println("; defaulting to TRUE");
+          TeeSerial0 << "Unknown boolean value " << argValue << "; defaulting to TRUE\n";
           config.heartbeatEnabled = true;
         }
       } else {
-        TeeSerial0.print("Unknown configuration key ");
-        TeeSerial0.println(argName);
+        TeeSerial0 << "Unknown configuration key " << argName << "\n";
       }
     }
 
@@ -590,7 +566,7 @@ void handleStats() {
   } else {
     File stats = SPIFFS.open("/statistics.csv", "r");
     if (!stats) {
-        TeeSerial0.println("handleStats: file open failed while opening /statistics.csv");
+        TeeSerial0 << "handleStats: file open failed while opening /statistics.csv\n";
         message += "<h2>No statistics collected yet.</h2>\n";
     } else {
       message += "<table border=1 cellpadding=1 cellspacing=0>";
@@ -670,43 +646,40 @@ void handleNotFound(){
   server.send(404, "text/plain", message);
 }
 
-// Debug function, not used for now
-void dumpSPIFFSInfo() {
-  FSInfo fs_info;
-  SPIFFS.info(fs_info);
-
-  TeeSerial0.println("Filesystem info");
-  TeeSerial0.print("Total bytes: ");
-  TeeSerial0.println(fs_info.totalBytes);
-  TeeSerial0.print("Used bytes: ");
-  TeeSerial0.println(fs_info.usedBytes);
-  TeeSerial0.print("Block size: ");
-  TeeSerial0.println(fs_info.blockSize);
-  TeeSerial0.print("Page size: ");
-  TeeSerial0.println(fs_info.pageSize);
-  TeeSerial0.print("Max open files: ");
-  TeeSerial0.println(fs_info.maxOpenFiles);
-  TeeSerial0.print("Max path length: ");
-  TeeSerial0.println(fs_info.maxPathLength);
-  TeeSerial0.println("");
-  TeeSerial0.flush();
-
-  TeeSerial0.println("Directory listing of /");
+// Debug functions, not used for now
+void listSPIFFSDirectory() {
+  TeeSerial0 << "Directory listing of /\n";
   Dir dir = SPIFFS.openDir("/");
   while (dir.next()) {
-    TeeSerial0.print("  ");
-    TeeSerial0.println(dir.fileName());
+    TeeSerial0 << "  " << dir.fileName() << "\n";
   }
   TeeSerial0.flush();
 }
 
+void dumpSPIFFSInfo() {
+FSInfo fs_info;
+SPIFFS.info(fs_info);
+
+TeeSerial0 << "Filesystem info\n";
+TeeSerial0 << "Total bytes: " << fs_info.totalBytes << "\n";
+TeeSerial0 << "Used bytes: " << fs_info.usedBytes << "\n";
+TeeSerial0 << "Block size: " << fs_info.blockSize << "\n";
+TeeSerial0 << "Page size: " << fs_info.pageSize << "\n";
+TeeSerial0 << "Max open files: " << fs_info.maxOpenFiles << "\n";
+TeeSerial0 << "Max path length: " << fs_info.maxPathLength << "\n";
+TeeSerial0 << "\n";
+TeeSerial0.flush();
+
+listSPIFFSDirectory();
+}
+
 // Setup functions
 void setupSPIFFS() {
-  TeeSerial0.println("Starting SPIFFS");
+  TeeSerial0 << "Starting SPIFFS\n";
   if (SPIFFS.begin()) {
-    TeeSerial0.println("SPIFFS initialized");
+    TeeSerial0 << "SPIFFS initialized\n";
   } else {
-    TeeSerial0.println("SPIFFS initialization failed!");
+    TeeSerial0 << "SPIFFS initialization failed!\n";
     return;
   }
   TeeSerial0.flush();
@@ -745,7 +718,7 @@ void setConfigDefaults() {
 bool readConfigToString(String& configFileText) {
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
-      TeeSerial0.println("readConfigToString: file open failed");
+      TeeSerial0 << "readConfigToString: file open failed\n";
       return false;
   }
   while (f.available()) {
@@ -758,17 +731,18 @@ bool readConfigToString(String& configFileText) {
 bool readConfigFile() {
   bool result = false;
 
-  TeeSerial0.println("Opening config file");
+  TeeSerial0 << "Opening config file\n";
   File f = SPIFFS.open("/bmchimes.cfg", "r");
   if (!f) {
-      TeeSerial0.println("readConfig: file open failed");
+      TeeSerial0 << "readConfig: file open failed\n";
       return false;
   }
   TeeSerial0.flush();
-  TeeSerial0.println("Beginning read of config file");
+  TeeSerial0 << "Beginning read of config file\n";
   TeeSerial0.flush();
   result = readConfigFromStream(f);
-  TeeSerial0.println("Closing config file");
+  TeeSerial0 << "Closing config file\n";
+  TeeSerial0.flush();
   f.close();
   return result;
 }
@@ -781,229 +755,182 @@ bool readConfigFromStream(Stream& s) {
     String key = s.readStringUntil('=');
     key.trim();
 #ifdef DEBUG
-    TeeSerial0.print("Read key ");
-    TeeSerial0.print(key);
-    TeeSerial0.print("; hex: ");
+    TeeSerial0 << "Read key " << key << "; hex: ";
     printStringAsHexDump(key);
-    TeeSerial0.println("");
+    TeeSerial0 << "\n";
 #endif
 
     String value = s.readStringUntil('\n');
     value.trim();
 #ifdef DEBUG
-    TeeSerial0.print("Read value ");
-    TeeSerial0.print(value);
-    TeeSerial0.print("; hex: ");
+    TeeSerial0 << "Read value " << value << "; hex: ";
     printStringAsHexDump(value);
-    TeeSerial0.println("");
+    TeeSerial0 << "\n";
 #endif
 
     TeeSerial0.flush();
     if (key == "DeviceDescription") {
-      TeeSerial0.print("Setting Device Description ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting Device Description " << value << "\n";
       config.deviceDescription = value;
     } else if (key == "WiFiSSID") {
-      TeeSerial0.print("Setting WiFi SSID ");
-      TeeSerial0.println(value);
-      TeeSerial0.print(" (");
+      TeeSerial0 << "Setting WiFi SSID " << value << " (";
       printStringAsHexDump(value);
-      TeeSerial0.println(")");
+      TeeSerial0 << ")\n";
       config.wiFiSSID = value;
     } else if (key == "WiFiPassword") {
-      TeeSerial0.print("Setting WiFi password ");
-      TeeSerial0.println(value);
-      TeeSerial0.print(" (");
+      TeeSerial0 << "Setting WiFi password " << value << " (";
       printStringAsHexDump(value);
-      TeeSerial0.println(")");
+      TeeSerial0 << ")\n";
       config.wiFiPassword = value;
     } else if (key == "WiFiMode") {
       // Either Station or AP
-      TeeSerial0.print("Setting WiFi mode ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting WiFi mode " << value << "\n";
       value.toUpperCase();
       if (value == "AP") {
         config.wiFiMode = WIFI_AP;
       } else if (value == "STATION") {
         config.wiFiMode = WIFI_STA;
       } else {
-        TeeSerial0.print("Unknown WiFi mode ");
-        TeeSerial0.print(value);
-        TeeSerial0.println("; defaulting to STATION");
+        TeeSerial0 << "Unknown WiFi mode " << value << "; defaulting to STATION" << "\n";
         config.wiFiMode = WIFI_STA;
       }
     } else if (key == "ConnectWiFiAtReset") {
       // true or false
-      TeeSerial0.print("Setting connect WiFi at reset flag to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting connect WiFi at reset flag to " << value << "\n";
       value.toUpperCase();
       if (value == "TRUE") {
         config.connectWiFiAtReset = true;
       } else if (value == "FALSE") {
         config.connectWiFiAtReset = false;
       } else {
-        TeeSerial0.print("Unknown boolean value ");
-        TeeSerial0.print(value);
-        TeeSerial0.println("; defaulting to TRUE");
+        TeeSerial0 << "Unknown boolean value " << value << "; defaulting to TRUE\n";
         config.connectWiFiAtReset = true;
       }
     } else if (key == "SleepEnabled") {
       // true or false
-      TeeSerial0.print("Setting sleep enabled flag to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting sleep enabled flag to " << value << "\n";
       value.toUpperCase();
       if (value == "TRUE") {
         config.sleepEnabled = true;
       } else if (value == "FALSE") {
         config.sleepEnabled = false;
       } else {
-        TeeSerial0.print("Unknown boolean value ");
-        TeeSerial0.print(value);
-        TeeSerial0.println("; defaulting to TRUE");
+        TeeSerial0 << "Unknown boolean value " << value << "; defaulting to TRUE\n";
         config.sleepEnabled = true;
       }
     } else if (key == "WakeEveryNSeconds") {
-      TeeSerial0.print("Setting wake every N seconds to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting wake every N seconds to " << value << "\n";
       config.wakeEveryNSeconds = value.toInt();
     } else if (key == "StayAwakeSeconds") {
-      TeeSerial0.print("Setting stay awake seconds to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting stay awake seconds to " << value << "\n";
       config.stayAwakeSeconds = value.toInt();
     } else if (key == "ChimeEveryNSeconds") {
-      TeeSerial0.print("Setting chime every N seconds to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting chime every N seconds to " << value << "\n";
       config.chimeEveryNSeconds = value.toInt();
     } else if (key == "ChimeOffset") {
-      TeeSerial0.print("Setting chime offset to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting chime offset to " << value << "\n";
       config.chimeOffsetSeconds = value.toInt();
     } else if (key == "InterChimeDelaySeconds") {
-      TeeSerial0.print("Setting inter-chime delay to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting inter-chime delay to " << value << "\n";
       config.interChimeDelaySeconds = value.toInt();
     } else if (key == "InterHourChimeDelaySeconds") {
-      TeeSerial0.print("Setting inter-hour-chime delay to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting inter-hour-chime delay to " << value << "\n";
       config.interHourChimeDelaySeconds = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
-        TeeSerial0.print("Value ");
-        TeeSerial0.print(value);
-        TeeSerial0.print(" larger than maximum 65535. Limiting to 65535.");
+        TeeSerial0 << "Value " << value << " larger than maximum 65535. Limiting to 65535.\n";
         config.chimeStopTimeout = 65535;
       } else {
-        TeeSerial0.print("Setting chime stop timeout to ");
-        TeeSerial0.println(value);
+        TeeSerial0 << "Setting chime stop timeout to " << value << "\n";
         config.chimeStopTimeout = value.toInt();
       }
     } else if (key == "HeartbeatEnabled") {
       // true or false
-      TeeSerial0.print("Setting heartbeat enabled flag to ");
-      TeeSerial0.println(value);
+      TeeSerial0 << "Setting heartbeat enabled flag to " << value << "\n";
       value.toUpperCase();
       if (value == "TRUE") {
         config.heartbeatEnabled = true;
       } else if (value == "FALSE") {
         config.heartbeatEnabled = false;
       } else {
-        TeeSerial0.print("Unknown boolean value ");
-        TeeSerial0.print(value);
-        TeeSerial0.println("; defaulting to TRUE");
+        TeeSerial0 << "Unknown boolean value " << value << "; defaulting to TRUE\n";
         config.heartbeatEnabled = true;
       }
     } else {
-      TeeSerial0.print("Unknown configuration key ");
-      TeeSerial0.println(key);
+      TeeSerial0 << "Unknown configuration key " << key << "\n";
     }
     loops++;
   }
-  TeeSerial0.println("Config read complete");
+  TeeSerial0 << "Config read complete\n";
   return true;
 }
 
 void writeConfig() {
-  TeeSerial0.println("writeConfig: Opening /bmchimes.cfg for writing");
+  TeeSerial0 << "writeConfig: Opening /bmchimes.cfg for writing" << "\n";
   File f = SPIFFS.open("/bmchimes.cfg", "w");
   if (!f) {
-      TeeSerial0.println("writeConfig: file open failed");
+      TeeSerial0 << "writeConfig: file open failed" << "\n";
       return;
   }
-  TeeSerial0.println("File successfully opened");
+  TeeSerial0 << "File successfully opened" << "\n";
 
   config.deviceDescription.trim();
-  TeeSerial0.print("Writing device description: ");
-  TeeSerial0.print(config.deviceDescription);
-  TeeSerial0.print("; hex: ");
+  TeeSerial0 << "Writing device description: " << config.deviceDescription << "; hex: ";
   printStringAsHexDump(config.deviceDescription);
-  TeeSerial0.println("");
-  f.print("DeviceDescription=");
-  f.println(config.deviceDescription);
+  TeeSerial0 << "\n";
+  f << "DeviceDescription=" << config.deviceDescription << "\n";
 
   config.wiFiSSID.trim();
-  TeeSerial0.print("Writing WiFiSSID: ");
-  TeeSerial0.print(config.wiFiSSID);
-  TeeSerial0.print("; hex: ");
+  TeeSerial0 << "Writing WiFiSSID: " << config.wiFiSSID << "; hex: ";
   printStringAsHexDump(config.wiFiSSID);
-  TeeSerial0.println("");
-  f.print("WiFiSSID=");
-  f.println(config.wiFiSSID);
+  TeeSerial0 << "\n";
+  f << "WiFiSSID=" << config.wiFiSSID << "\n";
 
   config.wiFiPassword.trim();
-  TeeSerial0.print("Writing WiFiPassword: ");
-  TeeSerial0.print(config.wiFiPassword);
-  TeeSerial0.print("; hex: ");
+  TeeSerial0 << "Writing WiFiPassword: " << config.wiFiPassword << "; hex: ";
   printStringAsHexDump(config.wiFiPassword);
-  TeeSerial0.println("");
-  f.print("WiFiPassword=");
-  f.println(config.wiFiPassword);
+  TeeSerial0 << "\n";
+  f << "WiFiPassword=" << config.wiFiPassword << "\n";
 
-  f.print("WiFiMode=");
+  f << "WiFiMode=";
   if (config.wiFiMode == WIFI_AP) {
-    f.println("AP");
+    f << "AP\n";
   } else if (config.wiFiMode == WIFI_STA) {
-    f.println("STATION");
+    f << "STATION\n";
   } else {
-    f.println("UNKNOWN");
+    f << "UNKNOWN\n";
   }
-  f.print("ConnectWiFiAtReset=");
+  f << "ConnectWiFiAtReset=";
   if (config.connectWiFiAtReset == true) {
-    f.println("TRUE");
+    f << "TRUE\n";
   } else {
-    f.println("FALSE");
+    f << "FALSE\n";
   }
-  f.print("SleepEnabled=");
+  f << "SleepEnabled=";
   if (config.sleepEnabled == true) {
-    f.println("TRUE");
+    f << "TRUE\n";
   } else {
-    f.println("FALSE");
+    f << "FALSE\n";
   }
-  f.print("WakeEveryNSeconds=");
-  f.println(config.wakeEveryNSeconds);
-  f.print("StayAwakeSeconds=");
-  f.println(config.stayAwakeSeconds);
-  f.print("ChimeEveryNSeconds=");
-  f.println(config.chimeEveryNSeconds);
-  f.print("ChimeOffset=");
-  f.println(config.chimeOffsetSeconds);
-  f.print("InterChimeDelaySeconds=");
-  f.println(config.interChimeDelaySeconds);
-  f.print("InterHourChimeDelaySeconds=");
-  f.println(config.interHourChimeDelaySeconds);
-  f.print("ChimeStopTimeout=");
-  f.println(config.chimeStopTimeout);
-  f.print("HeartbeatEnabled=");
+  f << "WakeEveryNSeconds=" << config.wakeEveryNSeconds << "\n";
+  f << "StayAwakeSeconds=" << config.stayAwakeSeconds << "\n";
+  f << "ChimeEveryNSeconds=" << config.chimeEveryNSeconds << "\n";
+  f << "ChimeOffset=" << config.chimeOffsetSeconds << "\n";
+  f << "InterChimeDelaySeconds=" << config.interChimeDelaySeconds << "\n";
+  f << "InterHourChimeDelaySeconds=" << config.interHourChimeDelaySeconds << "\n";
+  f << "ChimeStopTimeout=" << config.chimeStopTimeout << "\n";
+  f << "HeartbeatEnabled=";
   if (config.heartbeatEnabled == true) {
-    f.println("TRUE");
+    f << "TRUE\n";
   } else {
-    f.println("FALSE");
+    f << "FALSE\n";
   }
   f.close();
 }
 
 float batteryVoltage() {
-  const float R7 = 5000.0;
-  const float R8 = 220.0;
+  const float R7 = 10000.0;
+  const float R8 = 665.0;
   uint16_t adcReading = analogRead(A0);
   // Vin = Vout / (R8/(R7+R8))
   float Vout = adcReading / 1024.0;
@@ -1013,16 +940,18 @@ float batteryVoltage() {
 }
 
 void collectStats() {
+  TeeSerial0 << "Entering collectStats()\n";
+  listSPIFFSDirectory();
   SPIFFS.remove("/statistics.csv.old");
   SPIFFS.rename("/statistics.csv", "/statistics.csv.old");
   File oldStats = SPIFFS.open("/statistics.csv.old", "r");
   if (!oldStats) {
-      TeeSerial0.println("collectStats: file open failed while opening /statistics.csv.old");
+      TeeSerial0 << "collectStats: file open failed while opening /statistics.csv.old\n";
       // Probably our first run. OK to keep going.
   }
   File stats = SPIFFS.open("/statistics.csv", "w");
   if (!stats) {
-      TeeSerial0.println("collectStats: file open failed while opening /statistics.csv");
+      TeeSerial0 << "collectStats: file open failed while opening /statistics.csv\n";
       return;
   }
 
@@ -1047,8 +976,12 @@ void collectStats() {
   csvBlob += ",";
   csvBlob += String(lastChimeDurationMillis);
   csvBlob += "\n";
+  TeeSerial0 << "Latest statistics line:\n";
+  TeeSerial0 << csvBlob;
 
   if (oldStats) {
+    TeeSerial0 << "Copying historical data...";
+    TeeSerial0.flush();
     // If there are any old statistics to copy to the new file
     while (oldStats.available() && lines < statsLinesPerDay) {
       csvBlob += oldStats.readStringUntil('\n');
@@ -1056,27 +989,32 @@ void collectStats() {
       lines++;
     }
     oldStats.close();
+    TeeSerial0 << lines << " copied.\n";
   }
-  stats.print(csvBlob);
+
+  TeeSerial0 << "Writing CSV blob to statistics.csv...";
+  TeeSerial0.flush();
+  stats << csvBlob;
   stats.close();
+  TeeSerial0 << "done.\n";
 }
 
 void syncNTPTime() {
-  TeeSerial0.println("Fetching time from NTP servers");
+  TeeSerial0 << "Fetching time from NTP servers\n";
   // Pacific time zone hard coded
   configTime(-(7 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
   // Wait up to a minute for NTP sync
   uint8_t attempts = 0;
   while (attempts <= 120 && !time(nullptr)) {
-    TeeSerial0.print(".");
+    TeeSerial0 << ".";
     delay(500);
     attempts++;
   }
-  TeeSerial0.println("");
+  TeeSerial0 << "" << "\n";
   if (!time(nullptr)) {
-    TeeSerial0.println("Failed to sync time with NTP servers!");
+    TeeSerial0 << "Failed to sync time with NTP servers!\n";
   } else {
-    TeeSerial0.println("Successfully synced time with NTP servers.");
+    TeeSerial0 << "Successfully synced time with NTP servers.\n";
   }
 }
 
@@ -1094,28 +1032,22 @@ void connectToWiFi() {
     uint8_t attempts = 0; 
     while (attempts <= 120 && WiFi.status() != WL_CONNECTED) {
       delay(500);
-      TeeSerial0.print(".");
+      TeeSerial0 << ".";
       attempts++;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-      TeeSerial0.println("");
-      TeeSerial0.print("Connected to ");
-      TeeSerial0.println(config.wiFiSSID);
-      TeeSerial0.print("IP address: ");
-      TeeSerial0.println(WiFi.localIP());
+      TeeSerial0 << "\n";
+      TeeSerial0 << "Connected to " << config.wiFiSSID << "\n";
+      TeeSerial0 << "IP address: " << WiFi.localIP() << "\n";
     } else {
-      TeeSerial0.println("");
-      TeeSerial0.print("Unable to connect to ");
-      TeeSerial0.print(config.wiFiSSID);
-      TeeSerial0.println(" network.  Giving up.");
+      TeeSerial0 << "\n";
+      TeeSerial0 << "Unable to connect to " << config.wiFiSSID << " network.  Giving up.\n";
     }
   } else if (config.wiFiMode == WIFI_AP) {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
-    TeeSerial0.print("Starting WiFi network named ");
-    TeeSerial0.print(config.wiFiSSID);
-    TeeSerial0.print("...");
+    TeeSerial0 << "Starting WiFi network named " << config.wiFiSSID << "...";
     TeeSerial0.flush();
     if (config.wiFiPassword.length() > 0) {
       WiFi.softAP(ssid, password);
@@ -1123,14 +1055,13 @@ void connectToWiFi() {
       WiFi.softAP(ssid);
     }
 
-    TeeSerial0.println("done.");
-    TeeSerial0.print("My IP address is ");
-    TeeSerial0.println(WiFi.softAPIP());
+    TeeSerial0 << "done.\n";
+    TeeSerial0 << "My IP address is " << WiFi.softAPIP() << "\n";
   }
 }
 
 void writeNtpTimeToRtc() {
-  TeeSerial0.println("Setting RTC time from NTP time");
+  TeeSerial0 << "Setting RTC time from NTP time\n";
   time_t now = time(nullptr);
   RtcDateTime ntpDateTime = RtcDateTime();
   ntpDateTime.InitWithEpoch32Time(now);
@@ -1141,7 +1072,7 @@ void writeNtpTimeToRtc() {
 void rtcSetup() {
   Rtc.Begin();
   if (!Rtc.GetIsRunning()) {
-    TeeSerial0.println("RTC was not actively running, starting now");
+    TeeSerial0 << "RTC was not actively running, starting now\n";
     Rtc.SetIsRunning(true);
   }
   Rtc.Enable32kHzPin(false);
@@ -1218,23 +1149,23 @@ void calculateSleepAndChimeTiming() {
   RtcDateTime now = Rtc.GetDateTime();
   calculateSleepTiming(now);
   scheduleChimeSequence(now);
-  TeeSerial0.println("calculateSleepAndChimeTiming():");
+  TeeSerial0 << "calculateSleepAndChimeTiming():\n";
   dumpChimeSchedule();
 }
 
 void dumpChimeSchedule() {
-  TeeSerial0.println("Chime Schedule");
-  TeeSerial0.println("--------------------------------------");
+  TeeSerial0 << "Chime Schedule\n";
+  TeeSerial0 << "--------------------------------------\n";
   for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
     RtcDateTime scheduledChimeDateTime = RtcDateTime();
     if (chimeSchedule[i] != 0xffffffff) {
       scheduledChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
       String scheduledChimeString;
       dateTimeStringFromRtcDateTime(scheduledChimeDateTime, scheduledChimeString);
-      TeeSerial0.println(scheduledChimeString);
+      TeeSerial0 << scheduledChimeString << "\n";
     }
   }
-  TeeSerial0.println("");
+  TeeSerial0 << "\n";
 }
 
 time_t getNextChimeTime(RtcDateTime& now) {
@@ -1267,8 +1198,7 @@ void setRtcAlarms() {
   String chimeAlarmDateTimeString;
   dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
-  TeeSerial0.print("Time is now ");
-  TeeSerial0.println(nowString);
+  TeeSerial0 << "Time is now " << nowString << "\n";
 
   // Alarm one is the chime alarm
   DS3231AlarmOne alarmOne = DS3231AlarmOne(
@@ -1280,8 +1210,7 @@ void setRtcAlarms() {
   );
   
   Rtc.SetAlarmOne(alarmOne);
-  TeeSerial0.print("Chime scheduled for ");
-  TeeSerial0.println(chimeAlarmDateTimeString);
+  TeeSerial0 << "Chime scheduled for " << chimeAlarmDateTimeString << "\n";
   TeeSerial0.flush();
 
   // Alarm two is the once-per-minute alarm
@@ -1294,10 +1223,8 @@ void setRtcAlarms() {
   
   Rtc.SetAlarmTwo(alarmTwo);
   if (config.sleepEnabled) {
-    TeeSerial0.print("sleepDuration = ");
-    TeeSerial0.println(sleepDuration);
-    TeeSerial0.print("Sleep scheduled for ");
-    TeeSerial0.println(sleepAlarmDateTimeString);
+    TeeSerial0 << "sleepDuration = " << sleepDuration << "\n";
+    TeeSerial0 << "Sleep scheduled for " << sleepAlarmDateTimeString << "\n";
     TeeSerial0.flush();
   }
   
@@ -1308,7 +1235,7 @@ void setRtcAlarms() {
 void scheduleNextChime(RtcDateTime& now) {
   // Schedule next chime
   if (getNextChimeTime(now) == INVALID_TIME) {
-    TeeSerial0.println("No valid next chime time found.  Recalculating chime schedule...");
+    TeeSerial0 << "No valid next chime time found.  Recalculating chime schedule...\n";
     calculateSleepAndChimeTiming();
   }
   setRtcAlarms();
@@ -1343,7 +1270,7 @@ void heartbeatSetup() {
 void basicSetup() {
   pinMode(rtcAlarmPin, INPUT);
   TeeSerial0.begin(74880);
-  TeeSerial0.println("");
+  TeeSerial0 << "\n";
   Wire.begin();
 }
 
@@ -1368,14 +1295,14 @@ void startWebServer() {
 
   // Start the web server
   server.begin();
-  TeeSerial0.println("HTTP server started");
+  TeeSerial0 << "HTTP server started\n";
 }
 
 void setup(void) {
   basicSetup();
   setupSPIFFS();
   if (!readConfigFile()) {
-    TeeSerial0.println("Config read failed, setting defaults");
+    TeeSerial0 << "Config read failed, setting defaults\n";
     setConfigDefaults();
     writeConfig();
     readConfigFile();
@@ -1409,15 +1336,14 @@ void loop(void) {
     RtcDateTime now = Rtc.GetDateTime();
     if (flag & DS3231AlarmFlag_Alarm1) {
       // Chime alarm fired
-      TeeSerial0.println("Chime alarm fired!");
+      TeeSerial0 << "Chime alarm fired!\n";
       dateTimeStringFromRtcDateTime(now, nowString);
-      TeeSerial0.print("Time is now ");
-      TeeSerial0.println(nowString);
+      TeeSerial0 << "Time is now " << nowString << "\n";
       if (!chiming) {
         startChiming();
       } else {
         // Hopefully we only get here if someone has triggered a manual chime.
-        TeeSerial0.println("Chiming already in progress, skipping scheduled chime.");
+        TeeSerial0 << "Chiming already in progress, skipping scheduled chime.\n";
       }
     }
 
@@ -1429,15 +1355,12 @@ void loop(void) {
             && sleepAlarmDateTime.Second() == now.Second()) {
         // sleep now
         dateTimeStringFromRtcDateTime(now, nowString);
-        TeeSerial0.print("Time is now ");
-        TeeSerial0.println(nowString);
+        TeeSerial0 << "Time is now " << nowString << "\n";
         if (sleepDuration == 0) {
           // Sanity check; if we sleep for 0 seconds, the ESP never wakes up.
-          TeeSerial0.println("Sleep duration is zero, skipping sleep.");
+          TeeSerial0 << "Sleep duration is zero, skipping sleep.\n";
         } else {
-          TeeSerial0.print("Sleeping for ");
-          TeeSerial0.print(sleepDuration);
-          TeeSerial0.println(" seconds");
+          TeeSerial0 << "Sleeping for " << sleepDuration << " seconds\n";
           // deepSleep expects a number in microseconds
           ESP.deepSleep(sleepDuration * 1e6);
         }
@@ -1460,9 +1383,9 @@ void loop(void) {
     if (chimeStopSwitchFlag || (millis() - chimeStartMillis > config.chimeStopTimeout)) {
       // Check chime home switch GPIO flag (set by interrupt), turn off chime GPIO if set
       if (chimeStopSwitchFlag) {
-        TeeSerial0.println("Chime stop switch activated, turning off chime motor");
+        TeeSerial0 << "Chime stop switch activated, turning off chime motor\n";
       } else {
-        TeeSerial0.println("Timeout waiting for chime stop switch activation!");
+        TeeSerial0 << "Timeout waiting for chime stop switch activation!\n";
       }
       stopChiming();
       RtcDateTime now = Rtc.GetDateTime();
