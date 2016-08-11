@@ -243,7 +243,10 @@ void handleRoot() {
   dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
   dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
-  String message = "<html>\n<head>\n\t<title>Chimes Controller</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Chimes Controller</title>\n</head>\n<body>\n";
   message += "<h1>";
   message += config.deviceDescription;
   message += "</h1>\n";
@@ -273,19 +276,40 @@ void handleRoot() {
     message += "<br/>\n";
   }
 
+  message += "<h4>Chime Schedule</h4>\n";
+  for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
+    RtcDateTime scheduledChimeDateTime = RtcDateTime();
+    if (chimeSchedule[i] != 0xffffffff) {
+      scheduledChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
+      String scheduledChimeString;
+      dateTimeStringFromRtcDateTime(scheduledChimeDateTime, scheduledChimeString);
+      message += scheduledChimeString;
+      message += "<br/>\n";
+    }
+  }
+
+  message += "<table>\n";
+  message += "<tr>\n";
+  message += "<td>\n";
+
+  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
+  message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
+  message += "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
+  message += "<form action=\"/debuglog\" method=\"get\"><input type=\"submit\" value=\"Debug Log\"/></form>\n";
+  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
+  message += "<form action=\"/chimenow\" method=\"get\"><input type=\"submit\" value=\"Chime Now\"/></form>\n";
+  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
+  message += "</td>\n";
+
+  message += "<td>\n";
   String debugLog;
+  yield();
   TeeSerial0.getBuffer(debugLog);
   message += "<h4>Debug Log</h4>\n";
   message += "<pre>\n";
   message += debugLog;
   message += "</pre>\n";
-
-  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
-  message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
-  message += "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
-  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
-  message += "<form action=\"/chimenow\" method=\"get\"><input type=\"submit\" value=\"Chime Now\"/></form>\n";
-  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
+  message += "</tr>\n";
   message += "</body>\n</html>\n";
   server.send(200, "text/html", message);
 }
@@ -300,7 +324,10 @@ void handleSleep() {
 }
 
 void handleReset() {
-  String message = "<html>\n<head>\n\t<title>Reset</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Reset</title>\n</head>\n<body>\n";
   message += "<h1>Resetting!</h1>";
   message += "</body>\n</html>\n";
   
@@ -314,7 +341,10 @@ void handleTemp() {
   RtcTemperature dieTemp = Rtc.GetTemperature();
   float dieTempF = (dieTemp.AsFloat()*(9.0/5.0))+32.0;
   
-  String message = "<html>\n<head>\n\t<title>Temperature</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Temperature</title>\n</head>\n<body>\n";
   message += "<h1>Die temperature ";
   message += dieTempF;
   message += "&deg;F</h1>\n";
@@ -325,7 +355,10 @@ void handleTemp() {
 }
 
 void handleTime() {
-  String message = "<html>\n<head>\n\t<title>Manage Time Settings</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Manage Time</title>\n</head>\n<body>\n";
   message += "<h1>Time</h1>\n";
   if (server.method() == HTTP_POST) {
     for (uint8_t i = 0; i < server.args(); i++) {
@@ -362,7 +395,10 @@ void handleTime() {
 }
 
 void handleConfig() {
-  String message = "<html>\n<head>\n\t<title>Configure</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Configuration</title>\n</head>\n<body>\n";
   message += "<h1>Configuration</h1>";
 
   if (server.method() == HTTP_POST) {
@@ -555,7 +591,11 @@ void handleConfig() {
 }
 
 void handleStats() {
-  String message = "<html>\n<head>\n\t<title>Statistics</title>\n</head>\n<body>\n";
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Statistics</title>\n</head>\n<body>\n";
+  message += "<h1>Statistics</h1>\n";
   if (server.method() == HTTP_POST) {
     for (uint8_t i = 0; i < server.args(); i++) {
       if (server.argName(i) == "delete" && server.arg(i) == "true") {
@@ -629,6 +669,25 @@ void handleChimeNow() {
   server.sendHeader("Refresh", "5; url=/");
   server.send(200, "text/html", message);
   startChiming();
+}
+
+void handleDebugLog() {
+  String message = "<html>\n<head>\n";
+  message += "<title>";
+  message += config.deviceDescription;
+  message += " - Debug Log</title>\n</head>\n<body>\n";
+  message += "<h1>Debug Log</h1>";
+  message += "</body>\n</html>\n";
+  
+  String debugLog;
+  yield();
+  TeeSerial0.getBuffer(debugLog);
+  message += "<pre>\n";
+  message += debugLog;
+  message += "</pre>\n";
+
+  server.sendHeader("Refresh", "5; url=/debuglog");
+  server.send(200, "text/html", message);
 }
 
 void handleNotFound(){
@@ -940,8 +999,6 @@ float batteryVoltage() {
 }
 
 void collectStats() {
-  TeeSerial0 << "Entering collectStats()\n";
-  listSPIFFSDirectory();
   SPIFFS.remove("/statistics.csv.old");
   SPIFFS.rename("/statistics.csv", "/statistics.csv.old");
   File oldStats = SPIFFS.open("/statistics.csv.old", "r");
@@ -976,12 +1033,10 @@ void collectStats() {
   csvBlob += ",";
   csvBlob += String(lastChimeDurationMillis);
   csvBlob += "\n";
-  TeeSerial0 << "Latest statistics line:\n";
+  TeeSerial0 << "Latest statistics line: ";
   TeeSerial0 << csvBlob;
 
   if (oldStats) {
-    TeeSerial0 << "Copying historical data...";
-    TeeSerial0.flush();
     // If there are any old statistics to copy to the new file
     while (oldStats.available() && lines < statsLinesPerDay) {
       csvBlob += oldStats.readStringUntil('\n');
@@ -989,14 +1044,10 @@ void collectStats() {
       lines++;
     }
     oldStats.close();
-    TeeSerial0 << lines << " copied.\n";
   }
 
-  TeeSerial0 << "Writing CSV blob to statistics.csv...";
-  TeeSerial0.flush();
   stats << csvBlob;
   stats.close();
-  TeeSerial0 << "done.\n";
 }
 
 void syncNTPTime() {
@@ -1130,6 +1181,10 @@ void scheduleChimeSequence(RtcDateTime& now) {
 
 
     if (scheduleChimeState == CHIME_HOUR) {
+      if (scheduledHourChimes == 0) {
+        // Remove the offset from the first hour chime; all later hour chimes are computed as an offset from the first one
+        chimeSchedule[i] -= config.chimeOffsetSeconds;
+      }
       scheduledHourChimes++;
     } else {
       scheduleChimeState = (chime_state_t)(((int)scheduleChimeState + 1) % NUM_CHIME_STATES);
@@ -1283,6 +1338,7 @@ void startWebServer() {
   server.on("/temp", handleTemp);
   server.on("/config", handleConfig);
   server.on("/stats", handleStats);
+  server.on("/debuglog", handleDebugLog);
   server.on("/chimenow", handleChimeNow);
   server.onNotFound(handleNotFound);
 
