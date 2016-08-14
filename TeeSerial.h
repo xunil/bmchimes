@@ -3,7 +3,7 @@
 
 #include "HardwareSerial.h"
 
-#define TEE_BUFFER_SIZE 2048
+#define TEE_BUFFER_SIZE 512
 
 class TeeSerial : public HardwareSerial {
 public:
