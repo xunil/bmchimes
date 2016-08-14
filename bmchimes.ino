@@ -1155,39 +1155,43 @@ void scheduleChimeSequence(RtcDateTime& now) {
   // Clear any existing schedule.
   memset(chimeSchedule, 0xff, sizeof(chimeSchedule));
   uint16_t secondsTilNextChime;
-  time_t lastChimeTime;
-  static time_t chimeTime;
+  time_t globalFirstChimeTime;
   uint16_t scheduledHourChimes = 0;
+  uint16_t cycleOffsetSeconds = 0;
   uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
   chime_state_t scheduleChimeState;
-  for ( int i = 0, scheduleChimeState = CHIME_INITIAL;
-        i < MAX_CHIME_SCHEDULE, scheduleChimeState <= CHIME_HOUR && scheduledHourChimes < twelveHour;
-        i++) {
-    switch (scheduleChimeState) {
-      case CHIME_INITIAL:
-        secondsTilNextChime = secondsTilNextN(config.chimeEveryNSeconds / 60) + config.chimeOffsetSeconds;
-        chimeSchedule[i] = nowTime + secondsTilNextChime;
-        break;
-      case CHIME_SECOND:
-      case CHIME_THIRD:
-        secondsTilNextChime = config.interChimeDelaySeconds + config.chimeOffsetSeconds;
-        chimeSchedule[i] = chimeSchedule[i-1] + secondsTilNextChime;
-        break;
-      case CHIME_HOUR:
-        secondsTilNextChime = config.interHourChimeDelaySeconds;
-        chimeSchedule[i] = chimeSchedule[i-1] + secondsTilNextChime;
-        break;
-    }
 
+  /*
+  def scheduleChimeSequence(now)
+    chimeSchedule = []
+    nowTime = now.to_i
+    twelveHour = (now.hour % 12 == 0 ? 12 : now.hour % 12)
 
+    globalFirstChimeTime = nowTime + secondsTilNextN(now, $config.chimeEveryNSeconds/60)
+
+    (CHIME_INITIAL..CHIME_HOUR).each do |chimeState|
+      cycleOffsetSeconds = ((chimeState * $config.chimeCount) + (chimeState == CHIME_HOUR ? 0 : ($config.chimeNumber-1))) * $config.chimeCycleSeconds
+      if chimeState == CHIME_HOUR
+        (1..twelveHour).each do |hour|
+          chimeSchedule << globalFirstChimeTime + cycleOffsetSeconds + ($config.interHourChimeDelaySeconds * (hour-1))
+        end
+      else
+        chimeSchedule << globalFirstChimeTime + cycleOffsetSeconds
+      end
+    end
+    chimeSchedule
+  end
+  */
+  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60)
+  //for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
+  for (chime_state_t scheduleChimeState = CHIME_INITIAL; scheduleChimeState < CHIME_HOUR; (int)scheduleChimeState++) {
+    cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeCycleSeconds;
     if (scheduleChimeState == CHIME_HOUR) {
-      if (scheduledHourChimes == 0) {
-        // Remove the offset from the first hour chime; all later hour chimes are computed as an offset from the first one
-        chimeSchedule[i] -= config.chimeOffsetSeconds;
+      for (int hour = 0; hour < twelveHour; hour++) {
+        chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.interHourChimeDelaySeconds * hour);
       }
-      scheduledHourChimes++;
     } else {
-      scheduleChimeState = (chime_state_t)(((int)scheduleChimeState + 1) % NUM_CHIME_STATES);
+      chimeSchedule[(int)scheduleChimeState] = globalFirstChimeTime + cycleOffsetSeconds;
     }
   }
 
