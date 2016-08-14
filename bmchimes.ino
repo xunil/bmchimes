@@ -29,10 +29,10 @@ struct BMChimeConfig {
   uint16_t wakeEveryNSeconds;
   uint16_t stayAwakeSeconds;
   uint16_t chimeEveryNSeconds; 
-  uint16_t chimeOffsetSeconds; 
-  uint16_t interChimeDelaySeconds; 
-  uint16_t interHourChimeDelaySeconds; 
   uint16_t chimeStopTimeout; 
+  uint16_t chimeCount;
+  uint16_t chimeNumber;
+  uint16_t chimeCycleSeconds;
   bool heartbeatEnabled;
 } config;
 
@@ -52,8 +52,10 @@ uint32_t chimeStopMillis = 0;
 uint16_t lastChimeDurationMillis = 0;
 
 bool chiming = false;
-enum chime_state_t { CHIME_INITIAL = 0, CHIME_SECOND = 1, CHIME_THIRD = 2, CHIME_HOUR = 3 } chimeState = CHIME_INITIAL;
-uint8_t chimeHoursRungOut = 0;
+#define CHIME_INITIAL 0
+#define CHIME_SECOND 1
+#define CHIME_THIRD 2
+#define CHIME_HOUR 3
 #define NUM_CHIME_STATES 4
 #define MAX_CHIME_SCHEDULE 15
 #define INVALID_TIME 0xffffffff
@@ -163,25 +165,6 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
-  TeeSerial0 << "Chime state is ";
-  switch (chimeState) {
-    case CHIME_INITIAL:
-      TeeSerial0 << "INITIAL";
-      break;
-    case CHIME_SECOND:
-      TeeSerial0 << "SECOND";
-      break;
-    case CHIME_THIRD:
-      TeeSerial0 << "THIRD";
-      break;
-    case CHIME_HOUR:
-      TeeSerial0 << "HOUR (" << chimeHoursRungOut << " hours rung out)";
-      break;
-    default:
-      TeeSerial0 << "UNKNOWN";
-  }
-  TeeSerial0 << "\n";
-
   TeeSerial0 << "Chiming!\n";
   // Set a flag indicating chiming has begun
   chiming = true;
@@ -467,15 +450,6 @@ void handleConfig() {
       } else if (argName == "ChimeEveryNSeconds") {
         TeeSerial0 << "Setting chime every N to " << argValue << "\n";
         config.chimeEveryNSeconds = argValue.toInt();
-      } else if (argName == "ChimeOffset") {
-        TeeSerial0 << "Setting chime offset to " << argValue << "\n";
-        config.chimeOffsetSeconds = argValue.toInt();
-      } else if (argName == "InterChimeDelaySeconds") {
-        TeeSerial0 << "Setting inter-chime delay to " << argValue << "\n";
-        config.interChimeDelaySeconds = argValue.toInt();
-      } else if (argName == "InterHourChimeDelaySeconds") {
-        TeeSerial0 << "Setting inter-hour-chime delay to " << argValue << "\n";
-        config.interHourChimeDelaySeconds = argValue.toInt();
       } else if (argName == "ChimeStopTimeout") {
         if (argValue.toInt() > 65535) {
           TeeSerial0 << "Value " << argValue << " larger than maximum 65535. Limiting to 65535.\n";
@@ -484,6 +458,15 @@ void handleConfig() {
           TeeSerial0 << "Setting chime stop timeout to " << argValue << "\n";
           config.chimeStopTimeout = argValue.toInt();
         }
+      } else if (argName == "ChimeNumber") {
+        TeeSerial0 << "Setting chime number to " << argValue << "\n";
+        config.chimeNumber = argValue.toInt();
+      } else if (argName == "ChimeCount") {
+        TeeSerial0 << "Setting chime count to " << argValue << "\n";
+        config.chimeCount = argValue.toInt();
+      } else if (argName == "ChimeCycleSeconds") {
+        TeeSerial0 << "Setting chime cycle seconds to " << argValue << "\n";
+        config.chimeCycleSeconds = argValue.toInt();
       } else if (argName == "HeartbeatEnabled") {
         // true or false
         TeeSerial0 << "Setting heartbeat enabled flag to " << argValue << "\n";
@@ -552,18 +535,20 @@ void handleConfig() {
   message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryNSeconds\" value=\"";
   message += config.chimeEveryNSeconds;
   message += "\"/> seconds</label><br/>\n";
-  message += "<label>Chime offset <input type=\"text\" name=\"ChimeOffset\" value=\"";
-  message += config.chimeOffsetSeconds;
-  message += "\"/> seconds</label><br/>\n";
-  message += "<label>Inter-chime delay <input type=\"text\" name=\"InterChimeDelaySeconds\" value=\"";
-  message += config.interChimeDelaySeconds;
-  message += "\"/> seconds</label><br/>\n";
-  message += "<label>Inter-hour-chime delay <input type=\"text\" name=\"InterHourChimeDelaySeconds\" value=\"";
-  message += config.interHourChimeDelaySeconds;
-  message += "\"/> seconds</label><br/>\n";
   message += "<label>Chime stop timeout <input type=\"text\" name=\"ChimeStopTimeout\" value=\"";
   message += config.chimeStopTimeout;
   message += "\"/> milliseconds (max 65535)</label><br/>\n";
+
+  message += "This is chime <input type=\"text\" name=\"ChimeNumber\" value=\"";
+  message += config.chimeNumber;
+  message += "\"/> of <input type=\"text\" name=\"ChimeNumber\" value=\"";
+  message += config.chimeCount;
+  message += "\"/></label><br/>\n";
+
+  message += "<label>Chime cycle time<input type=\"text\" name=\"ChimeCycleSeconds\" value=\"";
+  message += config.chimeCycleSeconds;
+  message += "\"/> seconds</label><br/>\n";
+
   message += "<label>Heartbeat enabled <input type=\"checkbox\" name=\"HeartbeatEnabled\" ";
   if (config.heartbeatEnabled) {
     message += "checked";
@@ -767,10 +752,9 @@ void setConfigDefaults() {
   config.wakeEveryNSeconds = 240;
   config.stayAwakeSeconds = 120;
   config.chimeEveryNSeconds = 180;
-  config.chimeOffsetSeconds = 0;
-  config.interChimeDelaySeconds = 18;
-  config.interHourChimeDelaySeconds = 6;
   config.chimeStopTimeout = 65535;
+  config.chimeNumber = 1;
+  config.chimeCount = 4;
   config.heartbeatEnabled = true;
 }
 
@@ -886,15 +870,15 @@ bool readConfigFromStream(Stream& s) {
     } else if (key == "ChimeEveryNSeconds") {
       TeeSerial0 << "Setting chime every N seconds to " << value << "\n";
       config.chimeEveryNSeconds = value.toInt();
-    } else if (key == "ChimeOffset") {
-      TeeSerial0 << "Setting chime offset to " << value << "\n";
-      config.chimeOffsetSeconds = value.toInt();
-    } else if (key == "InterChimeDelaySeconds") {
-      TeeSerial0 << "Setting inter-chime delay to " << value << "\n";
-      config.interChimeDelaySeconds = value.toInt();
-    } else if (key == "InterHourChimeDelaySeconds") {
-      TeeSerial0 << "Setting inter-hour-chime delay to " << value << "\n";
-      config.interHourChimeDelaySeconds = value.toInt();
+    } else if (key == "ChimeNumber") {
+      TeeSerial0 << "Setting chime number to " << value << "\n";
+      config.chimeNumber = value.toInt();
+    } else if (key == "ChimeCount") {
+      TeeSerial0 << "Setting chime count to " << value << "\n";
+      config.chimeCount = value.toInt();
+    } else if (key == "ChimeCycleSeconds") {
+      TeeSerial0 << "Setting chime cycle seconds to " << value << "\n";
+      config.chimeCycleSeconds = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
         TeeSerial0 << "Value " << value << " larger than maximum 65535. Limiting to 65535.\n";
@@ -974,10 +958,10 @@ void writeConfig() {
   f << "WakeEveryNSeconds=" << config.wakeEveryNSeconds << "\n";
   f << "StayAwakeSeconds=" << config.stayAwakeSeconds << "\n";
   f << "ChimeEveryNSeconds=" << config.chimeEveryNSeconds << "\n";
-  f << "ChimeOffset=" << config.chimeOffsetSeconds << "\n";
-  f << "InterChimeDelaySeconds=" << config.interChimeDelaySeconds << "\n";
-  f << "InterHourChimeDelaySeconds=" << config.interHourChimeDelaySeconds << "\n";
   f << "ChimeStopTimeout=" << config.chimeStopTimeout << "\n";
+  f << "ChimeNumber=" << config.chimeNumber << "\n";
+  f << "ChimeCount=" << config.chimeCount << "\n";
+  f << "ChimeCycleSeconds=" << config.chimeCycleSeconds << "\n";
   f << "HeartbeatEnabled=";
   if (config.heartbeatEnabled == true) {
     f << "TRUE\n";
@@ -1139,7 +1123,7 @@ void calculateSleepTiming(RtcDateTime& now) {
   time_t nextSleepTime = wakeTime + secondsToStayAwake;
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
-  time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
+  //time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
@@ -1154,54 +1138,21 @@ void scheduleChimeSequence(RtcDateTime& now) {
 
   // Clear any existing schedule.
   memset(chimeSchedule, 0xff, sizeof(chimeSchedule));
-  uint16_t secondsTilNextChime;
   time_t globalFirstChimeTime;
-  uint16_t scheduledHourChimes = 0;
   uint16_t cycleOffsetSeconds = 0;
   uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
-  chime_state_t scheduleChimeState;
 
-  /*
-  def scheduleChimeSequence(now)
-    chimeSchedule = []
-    nowTime = now.to_i
-    twelveHour = (now.hour % 12 == 0 ? 12 : now.hour % 12)
-
-    globalFirstChimeTime = nowTime + secondsTilNextN(now, $config.chimeEveryNSeconds/60)
-
-    (CHIME_INITIAL..CHIME_HOUR).each do |chimeState|
-      cycleOffsetSeconds = ((chimeState * $config.chimeCount) + (chimeState == CHIME_HOUR ? 0 : ($config.chimeNumber-1))) * $config.chimeCycleSeconds
-      if chimeState == CHIME_HOUR
-        (1..twelveHour).each do |hour|
-          chimeSchedule << globalFirstChimeTime + cycleOffsetSeconds + ($config.interHourChimeDelaySeconds * (hour-1))
-        end
-      else
-        chimeSchedule << globalFirstChimeTime + cycleOffsetSeconds
-      end
-    end
-    chimeSchedule
-  end
-  */
-  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60)
-  //for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
-  for (chime_state_t scheduleChimeState = CHIME_INITIAL; scheduleChimeState < CHIME_HOUR; (int)scheduleChimeState++) {
+  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60);
+  for (int scheduleChimeState = CHIME_INITIAL; scheduleChimeState < CHIME_HOUR; scheduleChimeState++) {
     cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeCycleSeconds;
     if (scheduleChimeState == CHIME_HOUR) {
       for (int hour = 0; hour < twelveHour; hour++) {
-        chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.interHourChimeDelaySeconds * hour);
+        chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.chimeCycleSeconds * hour);
       }
     } else {
       chimeSchedule[(int)scheduleChimeState] = globalFirstChimeTime + cycleOffsetSeconds;
     }
   }
-
-  /* XXX 
-  // Determine if the next chime will happen between the next sleep and the next wake
-  if (chimeAlarmDateTime >= sleepAlarmDateTime && chimeAlarmDateTime <= wakeAlarmDateTime) {
-    // Chime will happen while we are asleep!  Skip the next sleep.
-    sleepAlarmDateTime.InitWithEpoch32Time(sleepTimeAfterNext);
-  }
-  */
 }
 
 void calculateSleepAndChimeTiming() {
@@ -1318,7 +1269,6 @@ void chimeSetup() {
   digitalWrite(chimePin, LOW);
   pinMode(chimeStopSwitchPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(chimeStopSwitchPin), chimeStopSwitchISR, FALLING);
-  chimeState = CHIME_INITIAL;
 }
 
 void heartbeatSetup() {
@@ -1449,17 +1399,6 @@ void loop(void) {
       }
       stopChiming();
       RtcDateTime now = Rtc.GetDateTime();
-      if (chimeState == CHIME_HOUR) {
-        chimeHoursRungOut++;
-        uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
-        if (chimeHoursRungOut >= twelveHour) {
-          chimeHoursRungOut = 0;
-          chimeState = CHIME_INITIAL;
-        }
-      } else {
-        // Advance to the next chime state.
-        chimeState = (chime_state_t)(((int)chimeState + 1) % NUM_CHIME_STATES);
-      }
       scheduleNextChime(now);
     }
   } else {
