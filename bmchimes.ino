@@ -1138,7 +1138,6 @@ void calculateSleepTiming(RtcDateTime& now) {
 }
 
 void scheduleChimeSequence(RtcDateTime& now) {
-  TeeSerial0 << "Entering scheduleChimeSequence()\n";
   time_t nowTime = now.Epoch32Time();
 
   // Clear any existing schedule.
@@ -1146,26 +1145,16 @@ void scheduleChimeSequence(RtcDateTime& now) {
   time_t globalFirstChimeTime;
   uint16_t cycleOffsetSeconds = 0;
   uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
-  TeeSerial0 << twelveHour << " hour chimes will be scheduled\n";
 
   globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60);
-  TeeSerial0 << "Global first chime time is " << globalFirstChimeTime << "\n";
   for (int scheduleChimeState = CHIME_INITIAL; scheduleChimeState < NUM_CHIME_STATES; scheduleChimeState++) {
-    TeeSerial0 << "chimeState = " << scheduleChimeState << "\n";
-    TeeSerial0 << "cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeCycleSeconds;\n";
-    TeeSerial0 << "cycleOffsetSeconds = (((int)" << scheduleChimeState << " * " << config.chimeCount << ") + (" << (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1)) << ") * " << config.chimeCycleSeconds << " = " << cycleOffsetSeconds << "\n";
     cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeCycleSeconds;
     if (scheduleChimeState == CHIME_HOUR) {
-      TeeSerial0 << "Oh, goody, it's CHIME_HOUR time!\n";
       for (int hour = 0; hour < twelveHour; hour++) {
         chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.chimeCycleSeconds * hour);
-        TeeSerial0 << "chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.chimeCycleSeconds * hour);\n";
-        TeeSerial0 << "chimeSchedule[" << scheduleChimeState + hour << "] = " << globalFirstChimeTime << " + " << cycleOffsetSeconds << " + (" << config.chimeCycleSeconds << " * " << hour << " = " << chimeSchedule[(int)scheduleChimeState+hour] << "\n";
       }
     } else {
       chimeSchedule[(int)scheduleChimeState] = globalFirstChimeTime + cycleOffsetSeconds;
-      TeeSerial0 << "chimeSchedule[(int)scheduleChimeState] = globalFirstChimeTime + cycleOffsetSeconds;\n";
-      TeeSerial0 << "chimeSchedule[" << (int)scheduleChimeState << "] = " << globalFirstChimeTime << " + " << cycleOffsetSeconds << " = " << chimeSchedule[(int)scheduleChimeState] << "\n";
     }
   }
 }
