@@ -1118,6 +1118,26 @@ void rtcSetup() {
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmBoth); 
 }
 
+bool timeOverlapsSleepSchedule(time_t start, time_t end) {
+  time_t lastScheduledChime = INVALID_TIME;
+  for (int i = (MAX_CHIME_SCHEDULE-1); i >= 0; i--) {
+    if (chimeSchedule[i] != INVALID_TIME) {
+      lastScheduledChime = chimeSchedule[i];
+      break;
+    }
+  }
+
+  if (lastScheduledTime == INVALID_TIME) {
+    // Schedule is apparently empty!
+    return false;
+  }
+
+  if ((start >= chimeSchedule[0] && start <= lastScheduledChime) || (end <= lastScheduledChime && end >= chimeSchedule[0])) {
+    return true;
+  }
+
+  return false;
+}
 
 void calculateSleepTiming(RtcDateTime& now) {
   uint16_t secondsToStayAwake = config.stayAwakeSeconds;
