@@ -1127,7 +1127,7 @@ bool timeOverlapsSleepSchedule(time_t start, time_t end) {
     }
   }
 
-  if (lastScheduledTime == INVALID_TIME) {
+  if (lastScheduledChime == INVALID_TIME) {
     // Schedule is apparently empty!
     return false;
   }
@@ -1140,6 +1140,7 @@ bool timeOverlapsSleepSchedule(time_t start, time_t end) {
 }
 
 void calculateSleepTiming(RtcDateTime& now) {
+  // Doesn't make sense for config.stayAwakeSeconds to be > than config.wakeEveryNSeconds
   uint16_t secondsToStayAwake = config.stayAwakeSeconds;
   uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
   time_t nowTime = now.Epoch32Time();
@@ -1148,6 +1149,13 @@ void calculateSleepTiming(RtcDateTime& now) {
   uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
   time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
   //time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
+  TeeSerial0 << "secondsToStayAwake = " << secondsToStayAwake << "\n";
+  TeeSerial0 << "secondsTilNextWake = " << secondsTilNextWake << "\n";
+  TeeSerial0 << "nowTime = " << nowTime << "\n";
+  TeeSerial0 << "wakeTime = " << wakeTime << "\n";
+  TeeSerial0 << "nextSleepTime = " << nextSleepTime << "\n";
+  TeeSerial0 << "secondsTilWakeAfterNext = " << secondsTilWakeAfterNext << "\n";
+  TeeSerial0 << "wakeTimeAfterNext = " << wakeTimeAfterNext << "\n";
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
