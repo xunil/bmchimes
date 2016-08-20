@@ -1,12 +1,15 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <Wire.h>
 #include <time.h>
 #include "FS.h"
 #include <RtcDS3231.h>
 #include <pgmspace.h>
 #include "TeeSerial.h"
+#include "StringStream.h"
 
 // Allows streaming output (<< syntax)
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; }
@@ -33,6 +36,8 @@ struct BMChimeConfig {
   uint16_t chimeCount;
   uint16_t chimeNumber;
   uint16_t chimeCycleSeconds;
+  uint16_t chimeInterInitialSeconds;
+  bool chimeEnabled;
   bool heartbeatEnabled;
 } config;
 
@@ -62,6 +67,7 @@ bool chiming = false;
 time_t chimeSchedule[MAX_CHIME_SCHEDULE];
 
 bool shouldCollectStats = false;
+volatile bool chimingWasEnabled = false;
 volatile bool chimeStopSwitchFlag = false;
 volatile bool alarmInterruptFlag = false;
 
@@ -133,12 +139,10 @@ void getNtpDateTimeString(String& dateTimeBuf) {
   dateTimeStringFromRtcDateTime(systemRtcDateTime, dateTimeBuf);
 }
 
-uint16_t secondsTilNextN(uint16_t N) {
+uint16_t secondsTilNextN(uint16_t N, RtcDateTime &startingFrom) {
   // 16 bit return value should be sufficient; we will chime or wake at least once an hour.
-  RtcDateTime now = Rtc.GetDateTime();
-
-  uint16_t seconds = ((N - (now.Minute() % N)) - 1) * 60;
-  seconds += 60 - now.Second();
+  uint16_t seconds = ((N - (startingFrom.Minute() % N)) - 1) * 60;
+  seconds += 60 - startingFrom.Second();
 
   return seconds;
 }
@@ -165,14 +169,18 @@ void chimeMotorOff() {
 }
 
 void startChiming() {
-  TeeSerial0 << "Chiming!\n";
-  // Set a flag indicating chiming has begun
-  chiming = true;
-  chimeStopSwitchFlag = false;
-  // Store time chiming began
-  chimeStartMillis = millis();
-  // Trigger chime GPIO
-  chimeMotorOn();
+  if (config.chimeEnabled) {
+    TeeSerial0 << "Chiming!\n";
+    // Set a flag indicating chiming has begun
+    chiming = true;
+    chimeStopSwitchFlag = false;
+    // Store time chiming began
+    chimeStartMillis = millis();
+    // Trigger chime GPIO
+    chimeMotorOn();
+  } else {
+    TeeSerial0 << "Chiming disabled (but would chime now)...\n";
+  }
 }
 
 void stopChiming() {
@@ -226,78 +234,76 @@ void handleRoot() {
   dateTimeStringFromRtcDateTime(sleepAlarmDateTime, sleepAlarmDateTimeString);
   dateTimeStringFromRtcDateTime(chimeAlarmDateTime, chimeAlarmDateTimeString);
 
-  String message = "<html>\n<head>\n";
-  message += "<title>";
-  message += config.deviceDescription;
-  message += " - Chimes Controller</title>\n</head>\n<body>\n";
-  message += "<h1>";
-  message += config.deviceDescription;
-  message += "</h1>\n";
-  message += "<h2>Status</h2>\n";
-  message += "RTC date and time ";
-  message += rtcDateTimeStr;
-  message += "<br/>\n";
-  message += "RTC die temperature ";
-  message += dieTempF;
-  message += "&deg;F<br/>\n";
+  String html = "<html>\n<head>\n";
+  StringStream message = StringStream(html);
+  message << "<title>" << config.deviceDescription << " - Chimes Controller</title>\n";
+  message << "<style>form { display: inline; }</style>\n";
+  message << "</head>\n<body>\n";
+  message << "<h1>";
+  message << config.deviceDescription;
+  message << "</h1>\n";
+  message << "<h2>Status</h2>\n";
+  message << "RTC date and time " << rtcDateTimeStr << "<br/>\n";
+  message << "RTC die temperature " << dieTempF << "&deg;F<br/>\n";
   if (config.sleepEnabled) {
-    message += "Next sleep scheduled at ";
-    message += sleepAlarmDateTimeString;
-    message += "<br/>\n";
+    message << "Next sleep scheduled at " << sleepAlarmDateTimeString << "<br/>\n";
   } else {
-    message += "Sleep disabled, no sleep scheduled<br/>\n";
+    message << "Sleep disabled, no sleep scheduled<br/>\n";
   }
-  message += "Next chime scheduled at ";
-  message += chimeAlarmDateTimeString;
-  message += "<br/>\n";
-  message += "Free heap: ";
-  message += ESP.getFreeHeap();
-  message += " bytes<br/>\n";
-  message += "Last chime stop switch interval: ";
-  message += lastChimeDurationMillis;
-  message += " milliseconds<br/>\n";
+  message << "Next chime scheduled at " << chimeAlarmDateTimeString << "<br/>\n";
+  message << "Free heap: " << ESP.getFreeHeap() << " bytes<br/>\n";
+  message << "Last chime stop switch interval: " << lastChimeDurationMillis << " milliseconds<br/>\n";
   if (WiFi.status() == WL_CONNECTED) {
-    message += "Connected to WiFi network ";
-    message += WiFi.SSID();
-    message += "<br/>\n";
+    message << "Connected to WiFi network " << WiFi.SSID() << "<br/>\n";
   }
 
-  message += "<h4>Chime Schedule</h4>\n";
+  message << "<table>\n";
+  message << "<tr>\n";
+  message << "<th>Chime Schedule</th>\n";
+  message << "<th>Debug Log</th>\n";
+  message << "</tr>\n";
+
+  // Chime schedule
+  message << "<tr>\n";
+  message << "<td>\n";
   for (int i = 0; i < MAX_CHIME_SCHEDULE; i++) {
     RtcDateTime scheduledChimeDateTime = RtcDateTime();
     if (chimeSchedule[i] != 0xffffffff) {
       scheduledChimeDateTime.InitWithEpoch32Time(chimeSchedule[i]);
       String scheduledChimeString;
       dateTimeStringFromRtcDateTime(scheduledChimeDateTime, scheduledChimeString);
-      message += scheduledChimeString;
-      message += "<br/>\n";
+      message << scheduledChimeString << "<br/>\n";
     }
   }
+  message << "</td>\n";
 
-  message += "<table>\n";
-  message += "<tr>\n";
-  message += "<td>\n";
-
-  message += "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
-  message += "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
-  message += "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
-  message += "<form action=\"/debuglog\" method=\"get\"><input type=\"submit\" value=\"Debug Log\"/></form>\n";
-  message += "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
-  message += "<form action=\"/chimenow\" method=\"get\"><input type=\"submit\" value=\"Chime Now\"/></form>\n";
-  message += "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
-  message += "</td>\n";
-
-  message += "<td>\n";
+  // Debug log
   String debugLog;
   yield();
   TeeSerial0.getBuffer(debugLog);
-  message += "<h4>Debug Log</h4>\n";
-  message += "<pre>\n";
-  message += debugLog;
-  message += "</pre>\n";
-  message += "</tr>\n";
-  message += "</body>\n</html>\n";
-  server.send(200, "text/html", message);
+  message << "<td>\n";
+  message << "<pre>\n";
+  message << debugLog;
+  message << "</pre>\n";
+  message << "</td>\n";
+  message << "</tr>\n";
+
+  // Buttons for the various actions
+  message << "<tr>\n";
+  message << "<td colspan=\"2\">\n";
+  message << "<form action=\"/config\" method=\"get\"><input type=\"submit\" value=\"Configure\"/></form>\n";
+  message << "<form action=\"/time\" method=\"get\"><input type=\"submit\" value=\"Manage Time\"/></form>\n";
+  message << "<form action=\"/stats\" method=\"get\"><input type=\"submit\" value=\"Statistics\"/></form>\n";
+  message << "<form action=\"/debuglog\" method=\"get\"><input type=\"submit\" value=\"Debug Log\"/></form>\n";
+  message << "<form action=\"/sleep\" method=\"get\"><input type=\"submit\" value=\"Sleep Now\"/></form>\n";
+  message << "<form action=\"/chimenow\" method=\"get\"><input type=\"submit\" value=\"Chime Now\"/></form>\n";
+  message << "<form action=\"/reset\" method=\"get\"><input type=\"submit\" value=\"Reset\"/></form>\n";
+  message << "</td>\n";
+  message << "</tr>\n";
+  message << "</table>\n";
+  message << "</body>\n</html>\n";
+
+  server.send(200, "text/html", html);
 }
 
 void handleSleep() {
@@ -381,11 +387,17 @@ void handleTime() {
 }
 
 void handleConfig() {
-  String message = "<html>\n<head>\n";
-  message += "<title>";
-  message += config.deviceDescription;
-  message += " - Configuration</title>\n</head>\n<body>\n";
-  message += "<h1>Configuration</h1>";
+  String html = "<html>\n<head>\n";
+  StringStream message = StringStream(html);
+  message << "<title>";
+  message << config.deviceDescription;
+  message << " - Configuration</title>\n";
+  message << "<style>\n";
+  message << "label { font-weight: bold; display: block; width: 200px; float: left; }\n";
+  message << "form { display: inline; }\n";
+  message << "</style>\n";
+  message << "</head>\n<body>\n";
+  message << "<h1>Configuration</h1>";
 
   if (server.method() == HTTP_POST) {
     // User selected save
@@ -393,6 +405,7 @@ void handleConfig() {
     // therefore, assume they are unchecked and let the for loop below correct this
     config.sleepEnabled = false;
     config.connectWiFiAtReset = false;
+    config.chimeEnabled = false;
     config.heartbeatEnabled = false;
 
     for (uint8_t i = 0; i < server.args(); i++) {
@@ -470,6 +483,21 @@ void handleConfig() {
       } else if (argName == "ChimeCycleSeconds") {
         TeeSerial0 << "Setting chime cycle seconds to " << argValue << "\n";
         config.chimeCycleSeconds = argValue.toInt();
+      } else if (argName == "ChimeInterInitialSeconds") {
+        TeeSerial0 << "Setting chime inter-initial seconds to " << argValue << "\n";
+        config.chimeInterInitialSeconds = argValue.toInt();
+      } else if (argName == "ChimeEnabled") {
+        // true or false
+        TeeSerial0 << "Setting chime enabled flag to " << argValue << "\n";
+        argValue.toUpperCase();
+        if (argValue == "TRUE" || argValue == "ON") {
+          config.chimeEnabled = true;
+        } else if (argValue == "FALSE" || argValue == "OFF") {
+          config.chimeEnabled = false;
+        } else {
+          TeeSerial0 << "Unknown boolean value " << argValue << "; defaulting to TRUE\n";
+          config.chimeEnabled = true;
+        }
       } else if (argName == "HeartbeatEnabled") {
         // true or false
         TeeSerial0 << "Setting heartbeat enabled flag to " << argValue << "\n";
@@ -491,91 +519,69 @@ void handleConfig() {
     // But don't bother if this was just an empty POST
     if (server.args() > 0) {
       writeConfig();
-      message += "<h4>Configuration updated.</h4>\n";
+      message << "<h4>Configuration updated.</h4>\n";
     }
   }
 
-  message += "<table border=0 cellspacing=10 cellpadding=10>\n";
-  message += "<tr><td>\n";
-  message += "<form action=\"/config\" method=\"post\">\n";
-  message += "<label>Device description <input type=\"text\" name=\"DeviceDescription\" value=\"";
-  message += config.deviceDescription;
-  message += "\"/></label><br/>\n";
-  message += "<label>WiFi SSID <input type=\"text\" name=\"WiFiSSID\" value=\"";
-  message += config.wiFiSSID;
-  message += "\"/></label><br/>\n";
-  message += "<label>WiFi Password <input type=\"text\" name=\"WiFiPassword\" value=\"";
-  message += config.wiFiPassword;
-  message += "\"/></label><br/>\n";
-  message += "<label>WiFi Mode <select name=\"WiFiMode\">\n";
-  message += "<option value=\"AP\" ";
-  if (config.wiFiMode == WIFI_AP) {
-    message += "selected";
-  }
-  message += ">Access Point</option>\n";
-  message += "<option value=\"STATION\" ";
-  if (config.wiFiMode == WIFI_STA) {
-    message += "selected";
-  }
-  message += ">Station</option>\n";
-  message += "</select></label><br/>\n";
-  message += "<label>Connect to WiFi at reset <input type=\"checkbox\" name=\"ConnectWiFiAtReset\" ";
-  if (config.connectWiFiAtReset) {
-    message += "checked";
-  }
-  message += "/></label><br/>\n";
-  message += "<label>Sleep enabled <input type=\"checkbox\" name=\"SleepEnabled\" ";
-  if (config.sleepEnabled) {
-    message += "checked";
-  }
-  message += "/></label><br/>\n";
-  message += "<label>Wake every <input type=\"text\" name=\"WakeEveryNSeconds\" value=\"";
-  message += config.wakeEveryNSeconds;
-  message += "\"/> seconds</label><br/>\n";
-  message += "<label>Stay awake for <input type=\"text\" name=\"StayAwakeSeconds\" value=\"";
-  message += config.stayAwakeSeconds;
-  message += "\"/> seconds</label><br/>\n";
-  message += "<label>Chime every <input type=\"text\" name=\"ChimeEveryNSeconds\" value=\"";
-  message += config.chimeEveryNSeconds;
-  message += "\"/> seconds</label><br/>\n";
-  message += "<label>Chime stop timeout <input type=\"text\" name=\"ChimeStopTimeout\" value=\"";
-  message += config.chimeStopTimeout;
-  message += "\"/> milliseconds (max 65535)</label><br/>\n";
+  message << "<table border=0 cellspacing=10 cellpadding=10>\n";
+  message << "<tr><td>\n";
+  message << "<form action=\"/config\" method=\"post\">\n";
+  message << "<label>Device description</label>\n";
+  message << "<input type=\"text\" name=\"DeviceDescription\" value=\"" << config.deviceDescription << "\"/><br/>\n";
+  message << "<label>WiFi SSID</label>\n";
+  message << "<input type=\"text\" name=\"WiFiSSID\" value=\"" << config.wiFiSSID << "\"/><br/>\n";
+  message << "<label>WiFi Password</label>\n";
+  message << "<input type=\"text\" name=\"WiFiPassword\" value=\"" << config.wiFiPassword << "\"/><br/>\n";
+  message << "<label>WiFi Mode</label>\n";
+  message << "<select name=\"WiFiMode\">\n";
+  message << "<option value=\"AP\" " << (config.wiFiMode == WIFI_AP ? "selected" : "") << ">Access Point</option>\n";
+  message << "<option value=\"STATION\" " << (config.wiFiMode == WIFI_STA ? "selected" : "") << ">Station</option>\n";
+  message << "</select><br/>\n";
+  message << "<label>Connect to WiFi at reset</label>\n";
+  message << "<input type=\"checkbox\" name=\"ConnectWiFiAtReset\" " << (config.connectWiFiAtReset ? "checked" : "") << "/><br/>\n";
+  message << "<label>Sleep enabled</label>\n";
+  message << "<input type=\"checkbox\" name=\"SleepEnabled\" " << (config.sleepEnabled ? "checked" : "") << "/><br/>\n";
+  message << "<label>Wake every</label>\n";
+  message << "<input type=\"text\" name=\"WakeEveryNSeconds\" value=\"" << config.wakeEveryNSeconds << "\"/> seconds<br/>\n";
+  message << "<label>Stay awake for</label>\n";
+  message << "<input type=\"text\" name=\"StayAwakeSeconds\" value=\"" << config.stayAwakeSeconds << "\"/> seconds<br/>\n";
+  message << "<label>Chime every</label>\n";
+  message << "<input type=\"text\" name=\"ChimeEveryNSeconds\" value=\"" << config.chimeEveryNSeconds << "\"/> seconds<br/>\n";
+  message << "<label>Chime stop timeout</label>\n";
+  message << "<input type=\"text\" name=\"ChimeStopTimeout\" value=\"" << config.chimeStopTimeout << "\"/> milliseconds (max 65535)<br/>\n";
 
-  message += "This is chime <input type=\"text\" name=\"ChimeNumber\" value=\"";
-  message += config.chimeNumber;
-  message += "\"/> of <input type=\"text\" name=\"ChimeCount\" value=\"";
-  message += config.chimeCount;
-  message += "\"/></label><br/>\n";
+  message << "<label>This is chime number</label>\n";
+  message << "<input type=\"text\" name=\"ChimeNumber\" size=\"4\" value=\"" << config.chimeNumber << "\"/> of ";
+  message << "<input type=\"text\" name=\"ChimeCount\" size=\"4\" value=\"" << config.chimeCount << "\"/><br/>\n";
 
-  message += "<label>Chime cycle time<input type=\"text\" name=\"ChimeCycleSeconds\" value=\"";
-  message += config.chimeCycleSeconds;
-  message += "\"/> seconds</label><br/>\n";
+  message << "<label>Chime cycle time</label>\n";
+  message << "<input type=\"text\" name=\"ChimeCycleSeconds\" value=\"" << config.chimeCycleSeconds << "\"/> seconds<br/>\n";
+  message << "<label>Chime inter-initial time</label>\n";
+  message << "<input type=\"text\" name=\"ChimeInterInitialSeconds\" value=\"" << config.chimeInterInitialSeconds << "\"/> seconds<br/>\n";
+  message << "<label>Chime enabled</label>\n";
+  message << "<input type=\"checkbox\" name=\"ChimeEnabled\" " << (config.chimeEnabled ? "checked" : "") << "/><br/>\n";
 
-  message += "<label>Heartbeat enabled <input type=\"checkbox\" name=\"HeartbeatEnabled\" ";
-  if (config.heartbeatEnabled) {
-    message += "checked";
-  }
-  message += "/></label><br/>\n";
-  message += "<input type=\"submit\" value=\"Save\"/>\n";
-  message += "</form>\n";
-  message += "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
-  message += "</td>\n";
-  message += "<td>\n";
-  message += "<h4>Current config</h4><br/>\n";
-  message += "<pre>\n";
+  message << "<label>Heartbeat enabled</label>\n";
+  message << "<input type=\"checkbox\" name=\"HeartbeatEnabled\" " << (config.heartbeatEnabled ? "checked" : "") << "/><br/>\n";
+  message << "<input type=\"submit\" value=\"Save\"/>\n";
+  message << "</form>\n";
+  message << "<form action=\"/\" method=\"post\"><input type=\"submit\" value=\"Home\"/></form>\n";
+  message << "</td>\n";
+  message << "<td>\n";
+  message << "<strong>Current config</strong><br/>\n";
+  message << "<pre>\n";
   String configFileText;
   if (readConfigToString(configFileText)) {
-    message += configFileText;
+    message << configFileText;
   } else {
-    message += "Error reading config file!";
+    message << "Error reading config file!";
   }
-  message += "</pre>\n";
-  message += "</td></tr>\n";
-  message += "</table>\n";
-  message += "</body>\n</html>\n";
+  message << "</pre>\n";
+  message << "</td></tr>\n";
+  message << "</table>\n";
+  message << "</body>\n</html>\n";
   
-  server.send(200, "text/html", message);
+  server.send(200, "text/html", html);
 }
 
 void handleStats() {
@@ -758,6 +764,9 @@ void setConfigDefaults() {
   config.chimeStopTimeout = 65535;
   config.chimeNumber = 1;
   config.chimeCount = 4;
+  config.chimeCycleSeconds = 6;
+  config.chimeInterInitialSeconds = 2;
+  config.chimeEnabled = true;
   config.heartbeatEnabled = true;
 }
 
@@ -771,6 +780,7 @@ bool readConfigToString(String& configFileText) {
     yield();
     configFileText += f.readString();
   }
+  f.close();
   return true;
 }
 
@@ -882,6 +892,9 @@ bool readConfigFromStream(Stream& s) {
     } else if (key == "ChimeCycleSeconds") {
       TeeSerial0 << "Setting chime cycle seconds to " << value << "\n";
       config.chimeCycleSeconds = value.toInt();
+    } else if (key == "ChimeInterInitialSeconds") {
+      TeeSerial0 << "Setting chime inter-initial seconds to " << value << "\n";
+      config.chimeInterInitialSeconds = value.toInt();
     } else if (key == "ChimeStopTimeout") {
       if (value.toInt() > 65535) {
         TeeSerial0 << "Value " << value << " larger than maximum 65535. Limiting to 65535.\n";
@@ -889,6 +902,18 @@ bool readConfigFromStream(Stream& s) {
       } else {
         TeeSerial0 << "Setting chime stop timeout to " << value << "\n";
         config.chimeStopTimeout = value.toInt();
+      }
+    } else if (key == "ChimeEnabled") {
+      // true or false
+      TeeSerial0 << "Setting chime enabled flag to " << value << "\n";
+      value.toUpperCase();
+      if (value == "TRUE") {
+        config.chimeEnabled = true;
+      } else if (value == "FALSE") {
+        config.chimeEnabled = false;
+      } else {
+        TeeSerial0 << "Unknown boolean value " << value << "; defaulting to TRUE\n";
+        config.chimeEnabled = true;
       }
     } else if (key == "HeartbeatEnabled") {
       // true or false
@@ -946,18 +971,8 @@ void writeConfig() {
   } else {
     f << "UNKNOWN\n";
   }
-  f << "ConnectWiFiAtReset=";
-  if (config.connectWiFiAtReset == true) {
-    f << "TRUE\n";
-  } else {
-    f << "FALSE\n";
-  }
-  f << "SleepEnabled=";
-  if (config.sleepEnabled == true) {
-    f << "TRUE\n";
-  } else {
-    f << "FALSE\n";
-  }
+  f << "ConnectWiFiAtReset=" << (config.connectWiFiAtReset ? "TRUE" : "FALSE") << "\n";
+  f << "SleepEnabled=" << (config.sleepEnabled ? "TRUE" : "FALSE") << "\n";
   f << "WakeEveryNSeconds=" << config.wakeEveryNSeconds << "\n";
   f << "StayAwakeSeconds=" << config.stayAwakeSeconds << "\n";
   f << "ChimeEveryNSeconds=" << config.chimeEveryNSeconds << "\n";
@@ -965,12 +980,9 @@ void writeConfig() {
   f << "ChimeNumber=" << config.chimeNumber << "\n";
   f << "ChimeCount=" << config.chimeCount << "\n";
   f << "ChimeCycleSeconds=" << config.chimeCycleSeconds << "\n";
-  f << "HeartbeatEnabled=";
-  if (config.heartbeatEnabled == true) {
-    f << "TRUE\n";
-  } else {
-    f << "FALSE\n";
-  }
+  f << "ChimeInterInitialSeconds=" << config.chimeInterInitialSeconds << "\n";
+  f << "ChimeEnabled=" << (config.chimeEnabled ? "TRUE" : "FALSE") << "\n";
+  f << "HeartbeatEnabled=" << (config.heartbeatEnabled ? "TRUE" : "FALSE") << "\n";
   f.close();
 }
 
@@ -1140,22 +1152,32 @@ bool timeOverlapsSleepSchedule(time_t start, time_t end) {
 }
 
 void calculateSleepTiming(RtcDateTime& now) {
-  // Doesn't make sense for config.stayAwakeSeconds to be > than config.wakeEveryNSeconds
+  RtcDateTime startingFrom = now;
+  // Doesn't make sense for config.stayAwakeSeconds to be > than config.wakeEveryNSeconds; alert on this in config screen
+  int sleepSchedulingAttempts = 0;
   uint16_t secondsToStayAwake = config.stayAwakeSeconds;
-  uint16_t secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60); // always on a minute boundary
-  time_t nowTime = now.Epoch32Time();
-  time_t wakeTime = nowTime + secondsTilNextWake;
-  time_t nextSleepTime = wakeTime + secondsToStayAwake;
-  uint16_t secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
-  time_t wakeTimeAfterNext = nowTime + secondsTilWakeAfterNext;
-  //time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
-  TeeSerial0 << "secondsToStayAwake = " << secondsToStayAwake << "\n";
-  TeeSerial0 << "secondsTilNextWake = " << secondsTilNextWake << "\n";
-  TeeSerial0 << "nowTime = " << nowTime << "\n";
-  TeeSerial0 << "wakeTime = " << wakeTime << "\n";
-  TeeSerial0 << "nextSleepTime = " << nextSleepTime << "\n";
-  TeeSerial0 << "secondsTilWakeAfterNext = " << secondsTilWakeAfterNext << "\n";
-  TeeSerial0 << "wakeTimeAfterNext = " << wakeTimeAfterNext << "\n";
+  uint16_t secondsTilNextWake, secondsTilWakeAfterNext;
+  time_t startingFromTime, wakeTime, nextSleepTime, wakeTimeAfterNext;
+  do {
+    startingFromTime = startingFrom.Epoch32Time();
+    secondsTilNextWake = secondsTilNextN(config.wakeEveryNSeconds / 60, now); // always on a minute boundary
+    wakeTime = startingFromTime + secondsTilNextWake;
+    nextSleepTime = wakeTime + secondsToStayAwake;
+    secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
+    wakeTimeAfterNext = startingFromTime + secondsTilWakeAfterNext;
+    //time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
+    TeeSerial0 << "Sleep Scheduling Attempt #" << sleepSchedulingAttempts << "\n";
+    TeeSerial0 << "--------------------------------\n";
+    TeeSerial0 << "secondsToStayAwake = " << secondsToStayAwake << "\n";
+    TeeSerial0 << "secondsTilNextWake = " << secondsTilNextWake << "\n";
+    TeeSerial0 << "startingFromTime = " << startingFromTime << "\n";
+    TeeSerial0 << "wakeTime = " << wakeTime << "\n";
+    TeeSerial0 << "nextSleepTime = " << nextSleepTime << "\n";
+    TeeSerial0 << "secondsTilWakeAfterNext = " << secondsTilWakeAfterNext << "\n";
+    TeeSerial0 << "wakeTimeAfterNext = " << wakeTimeAfterNext << "\n";
+    sleepSchedulingAttempts++;
+    startingFrom.InitWithEpoch32Time(wakeTimeAfterNext+1);
+  } while (sleepSchedulingAttempts < 3 && timeOverlapsSleepSchedule(nextSleepTime, wakeTimeAfterNext+config.chimeCycleSeconds));
 
   // set globals
   sleepDuration = wakeTimeAfterNext - nextSleepTime;
@@ -1174,9 +1196,11 @@ void scheduleChimeSequence(RtcDateTime& now) {
   uint16_t cycleOffsetSeconds = 0;
   uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
 
-  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60);
+  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60, now);
   for (int scheduleChimeState = CHIME_INITIAL; scheduleChimeState < NUM_CHIME_STATES; scheduleChimeState++) {
-    cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeCycleSeconds;
+    cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeInterInitialSeconds;
+ // cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) 
+ //                         * (scheduleChimeState == CHIME_HOUR ? config.chimeCycleSeconds : config.chimeInterInitialSeconds);
     if (scheduleChimeState == CHIME_HOUR) {
       for (int hour = 0; hour < twelveHour; hour++) {
         chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.chimeCycleSeconds * hour);
@@ -1189,8 +1213,8 @@ void scheduleChimeSequence(RtcDateTime& now) {
 
 void calculateSleepAndChimeTiming() {
   RtcDateTime now = Rtc.GetDateTime();
-  calculateSleepTiming(now);
   scheduleChimeSequence(now);
+  calculateSleepTiming(now);
   TeeSerial0 << "calculateSleepAndChimeTiming():\n";
   dumpChimeSchedule();
 }
@@ -1308,6 +1332,50 @@ void heartbeatSetup() {
   digitalWrite(heartbeatPin, LOW);
 }
 
+void otaUpdateSetup() {
+  ArduinoOTA.setPort(8266);
+  String otaHostname = config.deviceDescription;
+  for (char c = ' '; c < 127; c++) {
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+      continue;
+    otaHostname.replace(c, '-');
+  }
+  char otaHostnameBuf[64];
+  otaHostname.toCharArray(otaHostnameBuf, 64);
+  ArduinoOTA.setHostname(otaHostnameBuf);
+  ArduinoOTA.setPassword((const char *)"dingdong!"); // Yeah, lame, I know.
+
+  ArduinoOTA.onStart([]() {
+    TeeSerial0 << "OTA update starting!\n";
+    TeeSerial0 << "Stopping any chime in progress...\n";
+    stopChiming();
+    TeeSerial0 << "Saving chime enabled state...\n";
+    chimingWasEnabled = config.chimeEnabled;
+    TeeSerial0 << "Disabling chimes during update...\n";
+    config.chimeEnabled = false;
+  });
+  ArduinoOTA.onEnd([]() {
+    TeeSerial0 << "OTA update complete!\n";
+    TeeSerial0 << "Restoring chime enabled state...\n";
+    config.chimeEnabled = chimingWasEnabled;
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    TeeSerial0 << "OTA update in progress: " << (progress / (total / 100)) << "%% complete\n";
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    TeeSerial0 << "OTA update error #" << error << ": ";
+    if (error == OTA_AUTH_ERROR) TeeSerial0 << "Auth Failed";
+    else if (error == OTA_BEGIN_ERROR) TeeSerial0 << "Begin Failed";
+    else if (error == OTA_CONNECT_ERROR) TeeSerial0 << "Connect Failed";
+    else if (error == OTA_RECEIVE_ERROR) TeeSerial0 << "Receive Failed";
+    else if (error == OTA_END_ERROR) TeeSerial0 << "End Failed";
+    TeeSerial0 << "\n";
+    TeeSerial0 << "Restoring chime enabled state...\n";
+    config.chimeEnabled = chimingWasEnabled;
+  });
+  ArduinoOTA.begin();
+}
+
 void basicSetup() {
   pinMode(rtcAlarmPin, INPUT);
   TeeSerial0.begin(74880);
@@ -1360,6 +1428,7 @@ void setup(void) {
     heartbeatSetup();
     heartbeatReset();
   }
+  otaUpdateSetup();
   startWebServer();
 }
 
@@ -1441,6 +1510,8 @@ void loop(void) {
   }
   
   server.handleClient();
+  ArduinoOTA.handle();
+
   if (config.heartbeatEnabled) {
     heartbeat();
   }
