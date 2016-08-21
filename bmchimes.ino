@@ -243,6 +243,7 @@ void handleRoot() {
   message << config.deviceDescription;
   message << "</h1>\n";
   message << "<h2>Status</h2>\n";
+  message << "This is chime #" << config.chimeNumber << " of " << config.chimeCount << "<br/>\n";
   message << "RTC date and time " << rtcDateTimeStr << "<br/>\n";
   message << "RTC die temperature " << dieTempF << "&deg;F<br/>\n";
   if (config.sleepEnabled) {
@@ -1192,21 +1193,29 @@ void scheduleChimeSequence(RtcDateTime& now) {
 
   // Clear any existing schedule.
   memset(chimeSchedule, 0xff, sizeof(chimeSchedule));
-  time_t globalFirstChimeTime;
-  uint16_t cycleOffsetSeconds = 0;
+  time_t globalFirstStrikeTime;
   uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
+  uint8_t slot = 0;
 
-  globalFirstChimeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60, now);
-  for (int scheduleChimeState = CHIME_INITIAL; scheduleChimeState < NUM_CHIME_STATES; scheduleChimeState++) {
-    cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) * config.chimeInterInitialSeconds;
- // cycleOffsetSeconds = (((int)scheduleChimeState * config.chimeCount) + (scheduleChimeState == CHIME_HOUR ? 0 : (config.chimeNumber-1))) 
- //                         * (scheduleChimeState == CHIME_HOUR ? config.chimeCycleSeconds : config.chimeInterInitialSeconds);
-    if (scheduleChimeState == CHIME_HOUR) {
-      for (int hour = 0; hour < twelveHour; hour++) {
-        chimeSchedule[(int)scheduleChimeState+hour] = globalFirstChimeTime + cycleOffsetSeconds + (config.chimeCycleSeconds * hour);
-      }
-    } else {
-      chimeSchedule[(int)scheduleChimeState] = globalFirstChimeTime + cycleOffsetSeconds;
+  globalFirstStrikeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60, now);
+  for (int strike = 0; strike < twelveHour + 5; strike++) {
+    switch (strike) {
+      case 0:
+      case 1:
+      case 2:
+        // Initial strikes; formula for offset from first strike time is
+        // (strike + (chimeNumber - 1)) * interInitialStrikeDelaySeconds
+        chimeSchedule[slot++] = globalFirstStrikeTime + ((strike + (config.chimeNumber - 1)) * config.chimeInterInitialSeconds) + (strike * config.chimeCycleSeconds);
+        break;
+      case 3:
+      case 4:
+        // These strikes are silent; don't increment the slot number in the
+        // chime schedule, just increment the strike index
+        break;
+      default:
+        // Hour chimes; formula for offset from first strike time is
+        // strike * cycleTime
+        chimeSchedule[slot++] = globalFirstStrikeTime + (strike * config.chimeCycleSeconds);
     }
   }
 }
