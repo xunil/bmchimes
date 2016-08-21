@@ -1360,7 +1360,9 @@ void otaUpdateSetup() {
     config.chimeEnabled = chimingWasEnabled;
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    TeeSerial0 << "OTA update in progress: " << (progress / (total / 100)) << "%% complete\n";
+    if ((progress / (total / 100)) % 10 == 0) {
+      TeeSerial0 << "OTA update in progress: " << (progress / (total / 100)) << "% complete\n";
+    }
   });
   ArduinoOTA.onError([](ota_error_t error) {
     TeeSerial0 << "OTA update error #" << error << ": ";
