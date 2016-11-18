@@ -1189,15 +1189,16 @@ void calculateSleepTiming(RtcDateTime& now) {
 }
 
 void scheduleChimeSequence(RtcDateTime& now) {
-  time_t nowTime = now.Epoch32Time();
-
   // Clear any existing schedule.
   memset(chimeSchedule, 0xff, sizeof(chimeSchedule));
-  time_t globalFirstStrikeTime;
-  uint8_t twelveHour = (now.Hour() % 12 == 0 ? 12 : now.Hour() % 12);
+
+  time_t nowTime = now.Epoch32Time();
+  time_t globalFirstStrikeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60, now);
+  RtcDateTime globalFirstStrikeDateTime = RtcDateTime();
+  globalFirstStrikeDateTime.InitWithEpoch32Time(globalFirstStrikeTime);
+  uint8_t twelveHour = (globalFirstStrikeDateTime.Hour() % 12 == 0 ? 12 : globalFirstStrikeDateTime.Hour() % 12);
   uint8_t slot = 0;
 
-  globalFirstStrikeTime = nowTime + secondsTilNextN(config.chimeEveryNSeconds / 60, now);
   for (int strike = 0; strike < twelveHour + 5; strike++) {
     switch (strike) {
       case 0:
@@ -1218,6 +1219,21 @@ void scheduleChimeSequence(RtcDateTime& now) {
         chimeSchedule[slot++] = globalFirstStrikeTime + (strike * config.chimeCycleSeconds);
     }
   }
+}
+
+void fifteenMinuteChime(RtcDateTime& now) {
+  // It's a fifteen minute interval, because that's the only time this function is called
+  // However, it's up to us to determine whether striking now would interfere with the
+  // chime schedule.
+  time_t nowTime = now.Epoch32Time();
+  // Test to see if this strike would fall within a minute of any scheduled chime; if so, skip it entirely.
+  if (timeOverlapsSleepSchedule(nowTime - 30, (nowTime + config.chimeCycleSeconds) + 30)) {
+    // Don't want to interfere with the schedule, just skip this chime.
+    return;
+  }
+
+  // Kick off the strike!
+  startChiming();
 }
 
 void calculateSleepAndChimeTiming() {
@@ -1496,6 +1512,11 @@ void loop(void) {
 
       // Update chime schedule
       scheduleNextChime(now);
+
+      // Single strike at the 15 minute mark, unless it would overlap with the chime schedule
+      if (now.Minute() % 15 == 0) {
+        fifteenMinuteChime(now);
+      }
     }
   }
 
