@@ -11,6 +11,11 @@
 #include "TeeSerial.h"
 #include "StringStream.h"
 
+// Uncomment to enable 15 minute chime, comment #undef below
+// #define FIFTEEN_MINUTE_CHIME 1
+// Disable 15-minute chime
+#undef FIFTEEN_MINUTE_CHIME
+
 // Allows streaming output (<< syntax)
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; }
 
@@ -1221,6 +1226,7 @@ void scheduleChimeSequence(RtcDateTime& now) {
   }
 }
 
+#ifdef FIFTEEN_MINUTE_CHIME
 void fifteenMinuteChime(RtcDateTime& now) {
   // It's a fifteen minute interval, because that's the only time this function is called
   // However, it's up to us to determine whether striking now would interfere with the
@@ -1235,6 +1241,7 @@ void fifteenMinuteChime(RtcDateTime& now) {
   // Kick off the strike!
   startChiming();
 }
+#endif
 
 void calculateSleepAndChimeTiming() {
   RtcDateTime now = Rtc.GetDateTime();
@@ -1513,10 +1520,12 @@ void loop(void) {
       // Update chime schedule
       scheduleNextChime(now);
 
+#ifdef FIFTEEN_MINUTE_CHIME
       // Single strike at the 15 minute mark, unless it would overlap with the chime schedule
       if (now.Minute() % 15 == 0) {
         fifteenMinuteChime(now);
       }
+#endif
     }
   }
 
