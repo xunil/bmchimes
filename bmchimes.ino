@@ -1056,15 +1056,36 @@ void collectStats() {
   stats.close();
 }
 
+bool isDST() {
+  RtcDateTime now = RtcDateTime();
+  now.InitWithEpoch32Time(time(nullptr));
+  uint8_t month = now.Month();
+  // Credit to captncraig on StackOverflow!
+  // http://stackoverflow.com/questions/5590429/calculating-daylight-saving-time-from-only-date
+  // DST is from the second Sunday in March to the first Sunday in November.
+  // January, February, and December are out.
+  if (month < 3 || month > 11) return false;
+  // April to October are in
+  if (month > 3 && month < 11) return true;
+  int previousSunday = now.Day() - (now.DayOfWeek() + 1);
+  // In March, we are DST if our previous Sunday was on or after the 8th.
+  if (month == 3) return previousSunday >= 8;
+  // In November we must be before the first Sunday to be DST.
+  // That means the previous Sunday must be before the 1st.
+  return previousSunday <= 0;
+}
+
 void syncNTPTime() {
+  char *ntp_server_1 = "pool.ntp.org";
+  char *ntp_server_2 = "time.nist.gov";
   TeeSerial0 << "Fetching time from NTP servers\n";
   // Pacific time zone hard coded
-  configTime(-(8 * 3600), 3600, "pool.ntp.org", "time.nist.gov");
-  // Wait up to a minute for NTP sync
+  configTime(-(8 * 3600), 3600, ntp_server_1, ntp_server_2);
+  // Wait up to half a minute for NTP sync
   uint8_t attempts = 0;
-  while (attempts <= 120 && !time(nullptr)) {
+  while (attempts <= 30 && !time(nullptr)) {
     TeeSerial0 << ".";
-    delay(500);
+    delay(1000);
     attempts++;
   }
   TeeSerial0 << "" << "\n";
@@ -1072,6 +1093,24 @@ void syncNTPTime() {
     TeeSerial0 << "Failed to sync time with NTP servers!\n";
   } else {
     TeeSerial0 << "Successfully synced time with NTP servers.\n";
+  }
+
+  if (isDST()) {
+    // Hack around the fact that DST handling is commented out
+    // in the ESP8266 sntp implementation
+    TeeSerial0 << "Adjusting timezone due to DST\n";
+    configTime(-(7 * 3600), 3600, ntp_server_1, ntp_server_2);
+    while (attempts <= 30 && !time(nullptr)) {
+      TeeSerial0 << ".";
+      delay(1000);
+      attempts++;
+    }
+    TeeSerial0 << "" << "\n";
+    if (!time(nullptr)) {
+      TeeSerial0 << "Failed to re-sync time with NTP servers!\n";
+    } else {
+      TeeSerial0 << "Successfully re-synced time with NTP servers.\n";
+    }
   }
 }
 
@@ -1172,6 +1211,7 @@ void calculateSleepTiming(RtcDateTime& now) {
     secondsTilWakeAfterNext = secondsTilNextWake + config.wakeEveryNSeconds;
     wakeTimeAfterNext = startingFromTime + secondsTilWakeAfterNext;
     //time_t sleepTimeAfterNext = wakeTimeAfterNext + secondsToStayAwake;
+#if 0
     TeeSerial0 << "Sleep Scheduling Attempt #" << sleepSchedulingAttempts << "\n";
     TeeSerial0 << "--------------------------------\n";
     TeeSerial0 << "secondsToStayAwake = " << secondsToStayAwake << "\n";
@@ -1181,6 +1221,7 @@ void calculateSleepTiming(RtcDateTime& now) {
     TeeSerial0 << "nextSleepTime = " << nextSleepTime << "\n";
     TeeSerial0 << "secondsTilWakeAfterNext = " << secondsTilWakeAfterNext << "\n";
     TeeSerial0 << "wakeTimeAfterNext = " << wakeTimeAfterNext << "\n";
+#endif
     sleepSchedulingAttempts++;
     startingFrom.InitWithEpoch32Time(wakeTimeAfterNext+1);
   } while (sleepSchedulingAttempts < 3 && timeOverlapsSleepSchedule(nextSleepTime, wakeTimeAfterNext+config.chimeCycleSeconds));
@@ -1247,8 +1288,10 @@ void calculateSleepAndChimeTiming() {
   RtcDateTime now = Rtc.GetDateTime();
   scheduleChimeSequence(now);
   calculateSleepTiming(now);
+#if 0
   TeeSerial0 << "calculateSleepAndChimeTiming():\n";
   dumpChimeSchedule();
+#endif
 }
 
 void dumpChimeSchedule() {
@@ -1453,6 +1496,7 @@ void setup(void) {
   }
   connectToWiFi();
 
+  syncNTPTime();
   rtcSetup();
   clearRtcAlarms();
   calculateSleepAndChimeTiming();
