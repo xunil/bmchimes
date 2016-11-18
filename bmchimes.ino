@@ -1,5 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266SSDP.h>
 #include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
@@ -1407,14 +1409,19 @@ void heartbeatSetup() {
   digitalWrite(heartbeatPin, LOW);
 }
 
-void otaUpdateSetup() {
-  ArduinoOTA.setPort(8266);
-  String otaHostname = config.deviceDescription;
+void getOTAHostname(String& hostname) {
+  hostname = String(config.deviceDescription);
   for (char c = ' '; c < 127; c++) {
     if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
       continue;
-    otaHostname.replace(c, '-');
+    hostname.replace(c, '-');
   }
+}
+
+void otaUpdateSetup() {
+  ArduinoOTA.setPort(8266);
+  String otaHostname;
+  getOTAHostname(otaHostname);
   char otaHostnameBuf[64];
   otaHostname.toCharArray(otaHostnameBuf, 64);
   ArduinoOTA.setHostname(otaHostnameBuf);
@@ -1451,6 +1458,43 @@ void otaUpdateSetup() {
     config.chimeEnabled = chimingWasEnabled;
   });
   ArduinoOTA.begin();
+}
+
+void mDNSSetup() {
+  String mDNSHostname;
+  getOTAHostname(mDNSHostname);
+  char mDNSHostnameBuf[64];
+  mDNSHostname.toCharArray(mDNSHostnameBuf, 64);
+  if (!MDNS.begin(mDNSHostnameBuf)) {
+    TeeSerial0 << "Error setting up MDNS responder!\n";
+  }
+  TeeSerial0 << "mDNS responder started\n";
+  MDNS.addService("http", "tcp", 80);
+}
+
+void SSDPSetup() {
+  String mDNSHostname;
+  getOTAHostname(mDNSHostname);
+  char mDNSHostnameBuf[64];
+  mDNSHostname.toCharArray(mDNSHostnameBuf, 64);
+  server.on("/description.xml", HTTP_GET, [](){
+    SSDP.schema(server.client());
+  });
+
+  TeeSerial0 << "Starting SSDP...\n";
+  SSDP.setSchemaURL("description.xml");
+  SSDP.setHTTPPort(80);
+  SSDP.setName(mDNSHostname);
+  SSDP.setSerialNumber("001");
+  SSDP.setURL("/");
+  SSDP.setModelName("Burning Man 2016 Chime");
+  SSDP.setModelNumber("001");
+  SSDP.setModelURL("http://www.burningman.org");
+  SSDP.setManufacturer("Roger Carr and Robert Liesenfeld");
+  SSDP.setManufacturerURL("http://www.google.com");
+  SSDP.setDeviceType("upnp:rootdevice");
+  SSDP.begin();
+  TeeSerial0 << "SSDP started!\n";
 }
 
 void basicSetup() {
@@ -1508,6 +1552,8 @@ void setup(void) {
   }
   otaUpdateSetup();
   startWebServer();
+  mDNSSetup();
+  SSDPSetup();
 }
 
 void loop(void) {
