@@ -1059,7 +1059,7 @@ void collectStats() {
 void syncNTPTime() {
   TeeSerial0 << "Fetching time from NTP servers\n";
   // Pacific time zone hard coded
-  configTime(-(7 * 3600), -3600, "pool.ntp.org", "time.nist.gov");
+  configTime(-(8 * 3600), 3600, "pool.ntp.org", "time.nist.gov");
   // Wait up to a minute for NTP sync
   uint8_t attempts = 0;
   while (attempts <= 120 && !time(nullptr)) {
