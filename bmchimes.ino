@@ -17,6 +17,10 @@
 // #define FIFTEEN_MINUTE_CHIME 1
 // Disable 15-minute chime
 #undef FIFTEEN_MINUTE_CHIME
+// Uncomment to enable initial chimes, comment #undef below
+// #define STRIKE_INITIAL_CHIMES 1
+// Disable initial chime (used when chimes were installed around the man)
+#undef STRIKE_INITIAL_CHIMES
 
 // Allows streaming output (<< syntax)
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; }
@@ -1247,7 +1251,13 @@ void scheduleChimeSequence(RtcDateTime& now) {
   uint8_t twelveHour = (globalFirstStrikeDateTime.Hour() % 12 == 0 ? 12 : globalFirstStrikeDateTime.Hour() % 12);
   uint8_t slot = 0;
 
-  for (int strike = 0; strike < twelveHour + 5; strike++) {
+  int strikeCount = twelveHour;
+#ifdef STRIKE_INITIAL_CHIMES
+  strikeCount += 5;
+#endif
+
+  for (int strike = 0; strike < strikeCount; strike++) {
+#ifdef STRIKE_INITIAL_CHIMES
     switch (strike) {
       case 0:
       case 1:
@@ -1264,8 +1274,11 @@ void scheduleChimeSequence(RtcDateTime& now) {
       default:
         // Hour chimes; formula for offset from first strike time is
         // strike * cycleTime
+#endif
         chimeSchedule[slot++] = globalFirstStrikeTime + (strike * config.chimeCycleSeconds);
+#ifdef STRIKE_INITIAL_CHIMES
     }
+#endif
   }
 }
 
